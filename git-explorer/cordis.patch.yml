@@ -1,0 +1,7 @@
+- insert:
+    - id: git-explorer
+      name: '@local/git-explorer'
+      config:
+        limit: 24
+        timeoutMs: 12000
+        commitTimeoutMs: 30000

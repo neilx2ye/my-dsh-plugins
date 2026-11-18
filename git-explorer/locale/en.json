@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git side panel",
+    "description": "Open a collapsible Git panel beside the conversation with Changes and History tabs, file diffs, and manual commits."
+  }
+}

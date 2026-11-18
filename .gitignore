@@ -1,0 +1,10 @@
+node_modules/
+dist/
+out/
+output/
+*.tgz
+*.log
+.DS_Store
+
+# Local DSH client patch tool — not a plugin, contains DSH source backups.
+.dsh-timing-patch/

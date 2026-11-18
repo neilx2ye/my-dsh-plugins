@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP 服务器",
+    "description": "在设置中添加、编辑并测试 Model Context Protocol 服务器，把它们的工具接入 Harness。"
+  }
+}

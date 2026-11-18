@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Command line",
+    "description": "Run shell commands in the current workspace from a floating, tabbed window."
+  }
+}

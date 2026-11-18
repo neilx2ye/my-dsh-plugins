@@ -1,0 +1,5 @@
+- insert:
+    - id: command-runner
+      name: '@local/command-runner'
+      config:
+        maxOutputBytes: 1048576

@@ -1,0 +1,15 @@
+# Codex image gallery: project-scoped images + an isolated Codex account + a Host tool + Web panel.
+- insert:
+    - id: codex-images
+      name: '@local/codex-images'
+      config:
+        # Relative to each Session's project directory; images live here.
+        projectDir: output/imagegen
+        # Separate Codex home: OAuth and config here never touch ~/.codex.
+        codexHome: ~/.dsh/codex-home
+        generate: true
+        generateTimeoutMs: 300000
+        # Optional network proxy for Codex, e.g. socks5h://127.0.0.1:1080.
+        # The account panel can also save/test this at runtime.
+        proxy: ''
+        size: 1024x1024

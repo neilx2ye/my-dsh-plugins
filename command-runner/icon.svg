@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Command line panel">
+  <rect x="4" y="11" width="56" height="42" rx="10" fill="#1f2633"/>
+  <rect x="4.75" y="11.75" width="54.5" height="40.5" rx="9.25" fill="none" stroke="#3b4a63" stroke-width="1.5"/>
+  <path d="M17.5 26.5 25 32.5 17.5 38.5" fill="none" stroke="#5ad1a1" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30.5 38.5H45" fill="none" stroke="#8fb4ff" stroke-width="3.6" stroke-linecap="round"/>
+  <circle cx="11.5" cy="17.5" r="2" fill="#4a5a75"/>
+</svg>
