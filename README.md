@@ -61,6 +61,12 @@ package name to `~/.dsh/profiles/web/package.json` → `dsh.profile.bundles`.
 Then on GitHub: **Releases → Draft a new release**, choose/create the tag, attach the
 `out/*.tgz` files, publish. Asset URLs follow the pattern above.
 
+## Notes
+
+- **First push quirk**: pushing a brand-new branch and its first `v*` tag in one
+  `git push` does not start the workflow. Push the branch first, then the tag
+  (`git push -u origin main` then `git push origin v0.1.0`), or re-push the tag alone.
+
 ## Layout
 
 ```
