@@ -1,0 +1,151 @@
+# The Personal Agent bundle patch.
+#
+# Installing this bundle into one profile turns that profile — and only that
+# profile — into a set of named identities instead of a project container:
+#
+#   - the Host row contributes each identity's own persona and memory to its
+#     agent, gives it `remember` / `recall`, and keeps one workspace per
+#     identity titled after that identity;
+#   - the client replaces the Workspace/Session browser with the identity list
+#     and enters an identity's newest conversation when it is clicked;
+#   - the `personal` preset replaces the coding-agent persona for sessions that
+#     choose it, and is the default for sessions that name none;
+#   - the profile's user patch still applies last: a profile that explicitly
+#     pins another default preset keeps it.
+#
+# Every file this plugin owns lives under the profile this layer belongs to
+# (`<profile>/personal-agent/`). No device-wide setting is touched.
+
+- insert:
+    - id: personal-agent
+      name: '@local/personal-agent'
+      config:
+        identities:
+          - id: ada
+            name: Ada
+            role: personal assistant
+            userName: ''
+            persona: ''
+            accent: '#5b5bd6'
+            avatar: ''
+            home: ''
+            memoryFile: ''
+        memory:
+          includeInPrompt: true
+          maxBytes: 6000
+
+# Sessions created without a named preset resolve this default. A user patch
+# that already pins a default wins, because the profile layer applies last.
+- id: agent-preset-registry
+  name: '@deepseek-ai/dsh-agent-preset-registry'
+  config:
+    default: personal
+
+- insert:
+    - id: preset-personal
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: personal
+        name: Personal
+        description: Named personal identities with their own memory and home, instead of a coding agent in a project.
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a personal agent: one named identity the user returns to
+                across conversations. You live in this user’s Harness profile,
+                not in a project. You are a capable general assistant, and you
+                use tools, files, the web, and schedules when they help the
+                user.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelection: true
+                  modelDiscovery: true
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"
+          - id: tool-plugin-market
+            name: '@deepseek-ai/dsh-plugin-market/tools'
+            disabled: true

@@ -1580,11 +1580,11 @@ window.__ModuleLoader__.load({
      */
     function toggleGitPanel(ctx) {
       const active = ctx.sidebarRight.active();
-      if (active === undefined) return;
-      if (ctx.sidebarRight.isExpanded() && active.kind === TAB_KIND) {
+      if (ctx.sidebarRight.isExpanded() && active !== undefined && active.kind === TAB_KIND) {
         ctx.sidebarRight.toggleExpanded();
         return;
       }
+      if (!ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded();
       ctx.sidebarRight.openTab(TAB_KIND);
     }
 

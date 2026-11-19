@@ -1,6 +1,6 @@
 {
   "name": "@local/git-explorer",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "private": true,
   "type": "module",
   "description": "A collapsible Git side panel with Changes/History tabs, file diffs, and manual commits.",
