@@ -8,6 +8,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `codex-images/` | `@local/codex-images` | 0.1.0 | Project-scoped image gallery + `codex_image` tool |
 | `git-explorer/` | `@local/git-explorer` | 0.5.0 | Git browser for the current workspace |
 | `mcp-settings/` | `@local/mcp-settings` | 0.1.0 | Manage MCP servers from DSH Web |
+| `user-switcher/` | `@local/user-switcher` | 0.1.0 | Linux: inspect identity, list accounts, launch DSH as another user |
 
 Each plugin is a plain npm package with a `dsh.bundle.patch` layer. Releases attach
 `npm pack` tarballs; DSH installs them straight from the release URL, so target devices
@@ -23,6 +24,7 @@ https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-command-runner-
 https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-codex-images-0.1.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-git-explorer-0.5.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-mcp-settings-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-user-switcher-0.1.0.tgz
 ```
 
 After each install click **Enable now**, then restart `dsh web` when the profile has no HMR.
@@ -34,7 +36,8 @@ dsh plugin --profile web add \
   https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-command-runner-0.1.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-codex-images-0.1.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-git-explorer-0.5.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-mcp-settings-0.1.0.tgz
+  https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-mcp-settings-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.1.0/local-user-switcher-0.1.0.tgz
 ```
 
 Installing only records the dependency. To load a bundle, click **Enable now**, or append its
@@ -76,6 +79,7 @@ command-runner/                 plugin source
 codex-images/                   plugin source
 git-explorer/                   plugin source
 mcp-settings/                   plugin source
+user-switcher/                  plugin source (Linux only)
 ```
 
 `dist/`, `out/`, `output/`, `node_modules/` and `.dsh-timing-patch/` are ignored by git.

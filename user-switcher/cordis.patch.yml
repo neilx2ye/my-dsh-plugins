@@ -1,0 +1,5 @@
+- insert:
+    - id: user-switcher
+      name: '@local/user-switcher'
+      config:
+        port: 3081
