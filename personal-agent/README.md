@@ -40,13 +40,13 @@ The bundle is a normal `dsh.bundle` package. Install it into a profile:
 
 ```bash
 # 1. Create a profile from the shipped web template (once).
-dsh --profile personal --from-default-profile web --dump-config >/dev/null
+dsh --profile myprofile --from-default-profile web --dump-config >/dev/null
 
 # 2. Install this bundle. The CLI adds it to dsh.profile.bundles as well.
-dsh plugin --profile personal add /path/to/personal-agent   # or a release .tgz URL
+dsh plugin --profile myprofile add /path/to/personal-agent   # or a release .tgz URL
 
 # 3. Start it.
-dsh --profile personal
+dsh --profile myprofile
 ```
 
 From the Web UI the same steps are **Plugins → Add plugin** (or **Add bundle**)
@@ -143,6 +143,9 @@ the manager page where identities are created and edited. The plugin creates:
 ├── memory.md                     legacy identity's memory
 ├── identities/<id>/home/         every later identity's home
 ├── identities/<id>/memory.md     every later identity's memory
+├── groups/<groupId>/home/        one group's hidden workspace
+├── groups/<groupId>/transcript.json  the merged multi-agent group feed
+├── groups.json                   groups and their participant Sessions
 └── state.json                    identity → workspace id and last applied title
 ```
 
@@ -156,8 +159,10 @@ directory to run in.
    for the identity's home and newest non-archived Session.
 2. If one exists, the browser opens it; otherwise it creates a blank Session in
    that home with the `personal` preset.
-3. The original workspace/session browser may expand the identity's workspace to
-   show that conversation; that is the shipped UI, not a replacement.
+3. The browser auto-switches to the blank Session an agent creates with
+   `new_conversation`; the previous transcript is shown as a display-only block
+   and the new Session's model context starts empty. The previous conversation
+   also stays in the identity's history.
 
 ### Projects and sessions
 
@@ -172,7 +177,9 @@ project groups.
 - **Identity module above the Workspace browser** shows the `身份` header and
   each identity's avatar, name, and role. Selecting an identity asks the Host
   for its newest conversation and returns the main area to it; the `＋` action
-  opens the manager page.
+  opens the manager page. Agent-created fresh conversations are followed automatically, and a
+  compact progress strip in the composer reports the active task and running
+  Sessions.
 - Identity homes are still ordinary workspaces underneath, but their workspace
   and session rows are filtered out of the shipped Workspace browser by the
   native `data-row-key`. The project workspace/session UI is otherwise exactly
@@ -273,14 +280,88 @@ profile whichever preset it runs.
 | --- | --- |
 | `remember` | Append one durable fact to the calling identity's memory |
 | `recall` | Search or read the calling identity's memory |
+| `new_conversation` | Start a blank context after this turn; the previous transcript is shown display-only |
+| `ask_identity` | Legacy groups only: let the host ask one guest identity for a reply |
 
-Both are registered at the profile's Host scope and resolve the identity from
-the calling agent's working directory (nearest identity home wins), falling back
-to the first identity when a session runs outside every home.
+All four are registered at the profile's Host scope and resolve the identity
+from the calling agent's working directory (nearest identity home wins). They
+are visible only in identity conversations, not in project sessions.
+
+### Starting a fresh conversation
+
+An identity agent can call `new_conversation` when the user asks for a fresh
+start or changes to an unrelated topic. The tool registers a request for the
+end of the current turn; the Host then creates a blank Session in the identity
+workspace and records the previous Session as its display-only history source.
+The new model context is empty except for the identity prompt and long-term
+memory.
+
+The browser auto-follows the blank Session. An **上一段对话 · 仅展示** panel above
+the composer fetches the previous transcript from the Host and renders its
+user/assistant text. That panel is client-side only; it is never added to the
+new Session's model context. The panel can be collapsed, survives while the user
+chats in the new conversation, and a `↺` history action lists earlier Sessions
+as before. Opening history suppresses the auto-switch. The tool schedules one
+fresh conversation per turn; it is not an automatic per-message policy.
+
+Anything that must survive the switch has to be in long-term memory. The
+identity prompt tells the agent to call `remember` for durable preferences,
+projects, and decisions (and never for secrets), and `new_conversation`'s note
+reminds it before switching.
+
+### Group chat
+
+The identity module's **group** action (the two-person icon beside `＋`) opens a
+picker: choose at least two identities and optionally name the group. There is
+no host or moderator. Each selected identity gets its own independent Agent and
+Session in the group's hidden workspace (`personal-agent/groups/<groupId>/`),
+with its own persona, memory, and tools.
+
+The group opens as a plugin-rendered feed instead of a single DSH Session. When
+you send a message, the Host fans it out to every participant in parallel; each
+one sees the user message plus the group history and replies as itself. A
+message containing `@<name>` goes only to the named identities. Replies are
+written to the group transcript (`transcript.json`) as each participant's turn
+ends and appear under that identity's avatar and name. The page polls the
+transcript and marks participants that are still replying.
+
+Group rows appear under `群聊` in the identity module. Hover a row for the
+rename (`✎`) and close (`×`) actions. Renaming updates the group name and its
+hidden workspace title. Closing archives every participant Session and removes
+the group workspace registration; the identities' own conversations are
+untouched. Groups are archived, not deleted, so the Sessions remain in storage
+for recovery.
+
+Legacy host-and-guests groups created before this version keep their original
+Session and `ask_identity` tool; they open as a normal Session. New groups use
+the multi-agent feed. A legacy group Session is detached from the identity
+workspace on the next Host start, so a group transcript can never be selected
+as that identity's private conversation.
+
+In a blank identity or group conversation the hero's shipped brand, workspace
+picker, and preset picker are hidden. An identity shows its avatar and name; a
+group shows its group name and a rename action. The active conversation header
+uses the same rule: the session title and preset controls are hidden, and the
+identity's avatar/name or the group name is shown instead. Project heroes and
+headers are unchanged.
+
+### Progress strip
+
+The composer dock carries a compact status line for the focused identity:
+
+- `正在处理` while any of the identity's Sessions is running, with a subtle
+  pulse and the active todo when one exists;
+- `任务` with the active todo, completed/total count, and the number of other
+  running identity Sessions when the agent is idle;
+- hidden when the identity has no running Session and no todos.
+
+The line is passive (no click target); the full todo list remains the shipped
+TodoPanel above the composer. Auto-switch only runs while an identity
+conversation is on screen, never while a project conversation is focused.
 
 ## HTTP routes
 
-All four are owner-admitted by `connection.fetch` before the handler runs:
+All of these are owner-admitted by `connection.fetch` before the handler runs:
 
 | Route | Purpose |
 | --- | --- |
@@ -288,6 +369,12 @@ All four are owner-admitted by `connection.fetch` before the handler runs:
 | `POST /api/personal-agent/identity` | Create or update one identity through the config editor |
 | `PUT /api/personal-agent/memory` | Replace one identity's memory |
 | `POST /api/personal-agent/open` | Return an identity's or project's newest Session (`identityId` or `workspaceId`) |
+| `POST /api/personal-agent/identity/remove` | Remove an identity, archive its conversations, and move its data to `removed/` |
+| `POST /api/personal-agent/group` | Start a multi-agent group (or a legacy host-and-guests group) |
+| `POST /api/personal-agent/group/state` | Read a group transcript and participant status |
+| `POST /api/personal-agent/group/send` | Fan one user message out to the addressed participants |
+| `POST /api/personal-agent/group/remove` | Close a group, archive its Sessions, and remove its workspace |
+| `POST /api/personal-agent/group/rename` | Rename a group and its workspace |
 
 ## Security and privacy
 
@@ -301,7 +388,7 @@ All four are owner-admitted by `connection.fetch` before the handler runs:
 ```
 personal-agent/
 ├── index.js              Host: per-agent prompts, tools, homes, routes
-├── client.js             Browser: sidebar identity list, manager page, brand
+├── client.js             Browser: identity module, history, manager, progress, auto-switch
 ├── lib/identity.js       Config schema, validation, prompt composition
 ├── lib/paths.js          Per-identity home/memory locations and migration
 ├── lib/memory.js         Note format, search, atomic writes
@@ -349,9 +436,23 @@ DSH_HOME=/tmp/pa-check dsh --profile check --dump-config | grep -A4 'personal-ag
   conversation when clicked.
 - **No global conversation search.** Project history is a per-project
   disclosure; the old full-text session search UI is not mounted.
-- **Identity history is not surfaced.** Each identity row opens its newest
-  non-archived conversation; older identity conversations remain in session
-  storage but are not listed. Project history covers existing project work.
+- **New conversations are blank, with display-only history.** `new_conversation`
+  creates an empty-context Session and shows the old transcript in a client-only
+  panel. The transcript is not sent to the model. Durable information must be
+  written with `remember`; the previous Session also remains in the identity
+  history (`↺`).
+- **Group replies are parallel, not streamed.** Every participant is prompted at
+  the same time; each sees the user message and the history up to it, not the
+  other participants' same-round replies. A reply appears in the feed when that
+  participant's turn ends. A group supports two to four identities.
+- **Groups are archived on close.** Closing removes the group from the list,
+  archives every participant Session, and deletes the group workspace
+  registration; it does not erase the Session logs or the group transcript.
+- **Auto-switch is a client poll.** The browser checks the Host state roughly
+  once a second while an identity conversation is focused. It only follows the
+  pending fresh-conversation marker and waits until the current Session is idle.
+  Project and group conversations are never auto-switched. Opening history
+  suppresses the switch.
 - **Preset default can be pinned.** See “Agent preset” above.
 - **External memory edits wait for a restart.** The page and the `remember` tool
   share the in-process cache; a hand-edited `memory.md` is read at the next

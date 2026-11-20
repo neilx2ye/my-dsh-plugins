@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
   id: '@local/personal-agent',
   factory(require) {
     const React = require('react');
+    const ReactDOM = require('react-dom');
     const ReactDOMClient = require('react-dom/client');
     const h = React.createElement;
 
@@ -36,6 +37,56 @@ window.__ModuleLoader__.load({
     const REMOVE_URL = 'api/personal-agent/identity/remove';
     /** Ensure one identity's home and return its newest conversation. */
     const OPEN_URL = 'api/personal-agent/open';
+    /** Create a multi-agent group. */
+    const GROUP_URL = 'api/personal-agent/group';
+    /** Close a group and archive its conversations. */
+    const GROUP_REMOVE_URL = 'api/personal-agent/group/remove';
+    /** Rename one group. */
+    const GROUP_RENAME_URL = 'api/personal-agent/group/rename';
+    /** Read a multi-agent group feed and participant status. */
+    const GROUP_STATE_URL = 'api/personal-agent/group/state';
+    /** Post one message to a multi-agent group. */
+    const GROUP_SEND_URL = 'api/personal-agent/group/send';
+    /** Main-panel key for the group feed. */
+    const GROUP_PANEL_ID = 'personal-agent-group';
+    /** Clear the pending fresh-conversation marker after auto-switching. */
+    const FRESH_CONSUME_URL = 'api/personal-agent/fresh/consume';
+    /** Read the previous conversation for the display-only history block. */
+    const TRANSCRIPT_URL = 'api/personal-agent/transcript';
+
+    /** Local visibility preference for personal reasoning rows. */
+    const THINKING_KEY = 'personal-agent:show-thinking';
+    let thinkingVisible = false;
+    try {
+      thinkingVisible = window.localStorage.getItem(THINKING_KEY) === 'true';
+    } catch {
+      thinkingVisible = false;
+    }
+    const thinkingListeners = new Set();
+    /**
+     * Persist and broadcast the reasoning visibility preference.
+     * @param visible - whether reasoning content should be visible.
+     */
+    function setThinkingVisible(visible) {
+      thinkingVisible = visible;
+      try {
+        window.localStorage.setItem(THINKING_KEY, visible ? 'true' : 'false');
+      } catch {
+        // A storage-restricted browser keeps the in-memory preference.
+      }
+      for (const listener of thinkingListeners) listener();
+    }
+    /** Subscribe one component to the reasoning visibility preference. */
+    function useThinkingVisible() {
+      const [visible, setVisible] = React.useState(thinkingVisible);
+      React.useEffect(() => {
+        const listener = () => setVisible(thinkingVisible);
+        thinkingListeners.add(listener);
+        listener();
+        return () => thinkingListeners.delete(listener);
+      }, []);
+      return visible;
+    }
     /** Sidebar panel id; also the main-panel key. */
     const PANEL_ID = 'personal-agent';
     /** Accent choices shared with the Host's palette. */
@@ -128,6 +179,55 @@ window.__ModuleLoader__.load({
       'how.projects.title': 'Projects stay as they are',
       'how.projects.text': 'Your existing workspaces, session lists, search, drag, archive, and New Session keep working exactly as before. Identities are reached from the identity module directly above the workspace browser, or from this page.',
       'how.details': 'Details',
+      'progress.working': 'Working',
+      'progress.tasks': 'Tasks',
+      'progress.running': 'In progress…',
+      'progress.idle': 'No active task',
+      'progress.other': '+{count} other sessions',
+      'progress.completed': '{done}/{total} done',
+      'groups.title': 'Groups',
+      'groups.create': 'Start a group chat',
+      'groups.needTwo': 'Create at least two identities first.',
+      'groups.memberCount': '{count} participants',
+      'groups.pickTitle': 'Start a group chat',
+      'groups.pickHint': 'Choose at least two identities. Each one is its own agent and replies to the group.',
+      'groups.host': 'Host',
+      'groups.name': 'Group name',
+      'groups.namePlaceholder': 'Uses the selected names',
+      'groups.start': 'Start',
+      'groups.starting': 'Starting…',
+      'groups.cancel': 'Cancel',
+      'groups.close': 'Close group',
+      'groups.closeTitle': 'Close {name}?',
+      'groups.closeText': "The group leaves the list and its conversation is archived. Each identity's own conversations are untouched.",
+      'groups.closeConfirm': 'Close group',
+      'groups.closing': 'Closing…',
+      'groups.closeFailed': 'Could not close the group: {message}',
+      'groups.rename': 'Rename group',
+      'groups.renameTitle': 'Rename {name}',
+      'groups.renameLabel': 'Group name',
+      'groups.renameSave': 'Save',
+      'groups.renaming': 'Saving…',
+      'groups.renameFailed': 'Could not rename the group: {message}',
+      'groups.empty': 'Select a group from the identity module.',
+      'groups.emptyFeed': 'No messages yet. Say something to the group.',
+      'groups.composePlaceholder': 'Message the group… every participant replies unless you @mention one',
+      'groups.mentionHint': 'Send to all participants, or @name to address one',
+      'groups.send': 'Send',
+      'groups.sending': 'Sending…',
+      'groups.sendFailed': 'Could not send: {message}',
+      'groups.sendPartial': '{count} participant(s) could not be prompted',
+      'history.open': 'Conversation history',
+      'history.title': 'Conversations with {name}',
+      'history.empty': 'No earlier conversations yet.',
+      'history.close': 'Close',
+      'history.displayTitle': 'Previous conversation · display only',
+      'history.displayCount': '{count} messages',
+      'history.displayEmpty': 'No text messages to show.',
+      'history.displayFailed': 'Could not load the previous conversation.',
+      'history.you': 'You',
+      'thinking.show': 'Show reasoning',
+      'thinking.hide': 'Hide reasoning',
       'how.tools': 'Every identity can call remember and recall in any conversation.',
       footer: 'Personal Agent · scoped to this profile · no device-wide settings',
     };
@@ -215,6 +315,55 @@ window.__ModuleLoader__.load({
       'how.projects.title': '项目保持原样',
       'how.projects.text': '你原有的工作区、会话列表、搜索、拖拽、归档和新建会话都按原样工作；身份从工作区上方的身份模块或这个页面进入。',
       'how.details': '说明',
+      'progress.working': '正在处理',
+      'progress.tasks': '任务',
+      'progress.running': '进行中…',
+      'progress.idle': '暂无进行中的任务',
+      'progress.other': '另外 {count} 个会话',
+      'progress.completed': '{done}/{total} 完成',
+      'groups.title': '群聊',
+      'groups.create': '开始群聊',
+      'groups.needTwo': '至少先创建两个身份。',
+      'groups.memberCount': '{count} 位成员',
+      'groups.pickTitle': '开始群聊',
+      'groups.pickHint': '至少选两个身份。每个身份都是独立的智能体，会各自回复群聊。',
+      'groups.host': '主持',
+      'groups.name': '群聊名称',
+      'groups.namePlaceholder': '留空则使用选中的名字',
+      'groups.start': '开始',
+      'groups.starting': '正在创建…',
+      'groups.cancel': '取消',
+      'groups.close': '关闭群聊',
+      'groups.closeTitle': '关闭 {name}？',
+      'groups.closeText': '群聊会从列表消失，群聊对话会被归档；各身份自己的对话不受影响。',
+      'groups.closeConfirm': '确认关闭',
+      'groups.closing': '正在关闭…',
+      'groups.closeFailed': '关闭群聊失败：{message}',
+      'groups.rename': '修改群名',
+      'groups.renameTitle': '修改 {name} 的名称',
+      'groups.renameLabel': '群聊名称',
+      'groups.renameSave': '保存',
+      'groups.renaming': '正在保存…',
+      'groups.renameFailed': '修改群名失败：{message}',
+      'groups.empty': '从身份模块选择一个群聊。',
+      'groups.emptyFeed': '还没有消息，直接对群里说点什么。',
+      'groups.composePlaceholder': '发到群里…默认所有身份都会回复，用 @名字 只叫某一位',
+      'groups.mentionHint': '默认发给所有成员；用 @名字 只叫某一位',
+      'groups.send': '发送',
+      'groups.sending': '发送中…',
+      'groups.sendFailed': '发送失败：{message}',
+      'groups.sendPartial': '{count} 位成员未能收到消息',
+      'history.open': '历史对话',
+      'history.title': '与 {name} 的历史对话',
+      'history.empty': '还没有更早的对话。',
+      'history.close': '关闭',
+      'history.displayTitle': '上一段对话 · 仅展示',
+      'history.displayCount': '{count} 条消息',
+      'history.displayEmpty': '没有可展示的文字消息。',
+      'history.displayFailed': '上一段对话加载失败。',
+      'history.you': '你',
+      'thinking.show': '显示思考过程',
+      'thinking.hide': '隐藏思考过程',
       'how.tools': '每个身份都可以在任何对话中调用 remember 和 recall。',
       footer: 'Personal Agent · 仅作用于当前 profile · 不写入设备全局设置',
     };
@@ -339,10 +488,99 @@ window.__ModuleLoader__.load({
 .pagent-identity-block{display:flex;flex-direction:column;gap:2px;min-width:0}
 .pagent-identity-head{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:26px;padding:0 4px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.4}
 .pagent-identity-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em}
+.pagent-identity-head-actions{display:flex;align-items:center;gap:2px}
+.pagent-identity-thinking{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:1;cursor:pointer}
+.pagent-identity-thinking:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
+.pagent-identity-thinking:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-identity-thinking[data-hidden="true"]{color:var(--dsw-alias-label-caption)}
+.pagent-hide-thinking [data-variant="think"]{display:none}
+.pagent-identity-group{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+.pagent-identity-group:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
+.pagent-identity-group:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-identity-group:disabled{cursor:default;opacity:.4}
+.pagent-group-section{display:flex;flex-direction:column;gap:2px;margin-top:4px;min-width:0}
+.pagent-group-label{padding:2px 4px 0;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:1.4;letter-spacing:.02em}
+.pagent-group-row-wrap{position:relative;display:flex;min-width:0}
+.pagent-group-row-wrap .pagent-group-row{padding-right:56px;flex:1}
+.pagent-group-rename,.pagent-group-delete{appearance:none;position:absolute;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s ease}
+.pagent-group-rename{right:27px}
+.pagent-group-delete{right:3px}
+.pagent-group-row-wrap:hover .pagent-group-rename,.pagent-group-row-wrap:hover .pagent-group-delete,.pagent-group-row-wrap:focus-within .pagent-group-rename,.pagent-group-row-wrap:focus-within .pagent-group-delete{opacity:1}
+.pagent-group-rename:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
+.pagent-group-rename:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;opacity:1}
+.pagent-group-delete:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-state-error-primary)}
+.pagent-group-delete:focus-visible{outline:2px solid var(--dsw-alias-state-error-primary);outline-offset:-2px;opacity:1}
+.pagent-group-page{display:flex;flex-direction:column;min-height:0;height:100%;box-sizing:border-box;padding:18px clamp(16px,4vw,40px) 14px;gap:12px}
+.pagent-group-page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding-bottom:10px;border-bottom:.5px solid var(--dsw-alias-border-l2)}
+.pagent-group-page-title{display:flex;align-items:center;gap:8px;min-width:0}
+.pagent-group-page-glyph{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);flex:none}
+.pagent-group-page-name{font-size:15px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-group-page-people{display:flex;align-items:center;gap:4px;flex:none}
+.pagent-group-page-person{display:inline-flex}
+.pagent-group-feed{flex:1;min-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:4px 2px 10px;scrollbar-gutter:stable}
+.pagent-group-feed-empty{color:var(--dsw-alias-label-tertiary);font-size:13px;text-align:center;margin:auto}
+.pagent-group-message{display:flex;gap:8px;align-items:flex-start;max-width:100%}
+.pagent-group-message[data-role=user]{flex-direction:column;align-items:flex-end}
+.pagent-group-message-body{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:min(680px,86%)}
+.pagent-group-message-meta{display:flex;align-items:baseline;gap:8px;padding-left:2px}
+.pagent-group-message-name{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.pagent-group-bubble{background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;padding:9px 12px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6;max-width:min(720px,90%);box-sizing:border-box}
+.pagent-group-bubble-user{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 16%,var(--dsw-alias-bg-layer-2));border-color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 30%,transparent)}
+.pagent-group-message-text{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+.pagent-group-message-text a{color:var(--dsw-alias-state-business-primary);text-decoration:underline;text-underline-offset:2px}
+.pagent-group-inline-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:var(--dsw-alias-bg-layer-3,rgba(127,127,127,.16));border-radius:4px;padding:1px 4px}
+.pagent-group-message-time{font-size:10.5px;color:var(--dsw-alias-label-tertiary);padding:0 2px}
+.pagent-group-typing{display:flex;flex-wrap:wrap;gap:10px;color:var(--dsw-alias-label-tertiary);font-size:12px;padding:2px 4px}
+.pagent-group-typing span::after{content:'…';animation:pagent-group-dots 1.2s steps(3,end) infinite}
+@keyframes pagent-group-dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
+.pagent-group-page-error{color:var(--dsw-alias-state-error-primary);font-size:12px;margin:0}
+.pagent-group-composer{display:flex;flex-direction:column;gap:8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:10px 12px}
+.pagent-group-input{width:100%;resize:vertical;min-height:56px;max-height:220px;background:transparent;border:0;outline:0;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:1.6}
+.pagent-group-input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.pagent-group-composer-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pagent-group-composer-hint{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:640px){.pagent-group-page{padding:12px}.pagent-group-page-name{font-size:14px}.pagent-group-composer-hint{display:none}}
+@media (hover:none){.pagent-group-delete,.pagent-group-rename{opacity:.65}}
+.pagent-group-row{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:36px;padding:4px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;min-width:0}
+.pagent-group-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.pagent-group-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-group-glyph{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.pagent-group-copy{display:flex;flex-direction:column;gap:0;min-width:0;flex:1}
+.pagent-dialog-mask{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.5)}
+.pagent-dialog{box-sizing:border-box;width:min(430px,100%);max-height:min(78vh,720px);overflow:auto;padding:16px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.35)}
+.pagent-dialog-head{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.pagent-dialog-title{margin:0;color:var(--dsw-alias-label-primary);font-size:15px;line-height:1.5;font-weight:600}
+.pagent-dialog-text{margin:0;color:var(--dsw-alias-label-tertiary);font-size:11.5px;line-height:1.55}
+.pagent-group-options{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto;margin-bottom:8px;padding:3px;border:1px solid var(--dsw-alias-border-l1);border-radius:9px}
+.pagent-group-option{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;cursor:pointer;min-width:0}
+.pagent-group-option:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.pagent-group-option[data-selected="true"]{background:var(--dsw-alias-bg-layer-2)}
+.pagent-group-option input{accent-color:var(--dsw-alias-brand-primary);flex:none}
+.pagent-group-option-copy{display:flex;flex-direction:column;gap:0;min-width:0}
+.pagent-group-option-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.4;font-weight:600}
+.pagent-group-option-role{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4}
+.pagent-dialog-field{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.pagent-select{appearance:auto}
+.pagent-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pagent-history-list{display:flex;flex-direction:column;gap:2px;max-height:320px;overflow:auto;padding:3px;border:1px solid var(--dsw-alias-border-l1);border-radius:9px}
+.pagent-history-item{appearance:none;display:flex;flex-direction:column;align-items:flex-start;gap:1px;box-sizing:border-box;width:100%;padding:7px 9px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;min-width:0}
+.pagent-history-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.pagent-history-item:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-history-title{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.4;font-weight:600}
+.pagent-history-time{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4}
+.pagent-group-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.4;font-weight:600}
+.pagent-group-members{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4}
 .pagent-identity-manage{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font:inherit;font-size:14px;line-height:1}
 .pagent-identity-manage:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
 .pagent-identity-manage:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
 .pagent-identity-rows{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pagent-identity-row-wrap{position:relative;display:flex;min-width:0}
+.pagent-identity-row-wrap .pagent-identity-row{padding-right:30px;flex:1}
+.pagent-identity-history{appearance:none;position:absolute;right:3px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s ease}
+.pagent-identity-row-wrap:hover .pagent-identity-history,.pagent-identity-row-wrap:focus-within .pagent-identity-history{opacity:1}
+.pagent-identity-history:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
+.pagent-identity-history:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;opacity:1}
+@media (hover:none){.pagent-identity-history{opacity:.65}}
 .pagent-identity-row{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:38px;padding:5px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;flex:none}
 .pagent-identity-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
 .pagent-identity-row[data-active="true"]{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
@@ -360,6 +598,11 @@ window.__ModuleLoader__.load({
 [class*="_collapsed"] .pagent-identity-row{justify-content:center;width:36px;min-height:36px;height:36px;padding:0}
 [class*="_collapsed"] .pagent-identity-copy{display:none}
 [class*="_collapsed"] .pagent-identity-busy{display:none}
+[class*="_collapsed"] .pagent-identity-history{display:none}
+[class*="_collapsed"] .pagent-identity-row-wrap{justify-content:center}
+[class*="_collapsed"] .pagent-group-label{display:none}
+[class*="_collapsed"] .pagent-group-row{justify-content:center;width:36px;min-height:36px;height:36px;padding:0}
+[class*="_collapsed"] .pagent-group-copy{display:none}
 .pagent-button-danger{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}
 .pagent-button-danger:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
 .pagent-remove{display:flex;flex-direction:column;gap:8px;padding:10px 11px;border:1px solid var(--dsw-alias-border-l1);border-left:2px solid var(--dsw-alias-state-error-primary);border-radius:9px;background:var(--dsw-alias-bg-layer-2)}
@@ -394,6 +637,41 @@ window.__ModuleLoader__.load({
 .pagent-help-item{display:flex;flex-direction:column;gap:3px;min-width:0}
 .pagent-empty-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:34px 18px;text-align:center}
 .pagent-empty-title{margin:0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:1.55}
+.pagent-progress{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;min-width:0;max-width:100%;margin:0 auto;padding:5px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:1.5}
+.pagent-progress-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary)}
+.pagent-progress[data-running="true"] .pagent-progress-dot{background:var(--dsw-alias-brand-primary);animation:pagent-pulse 1.35s ease-in-out infinite}
+@keyframes pagent-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.8)}}
+.pagent-progress-label{flex:none;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.pagent-progress-task{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary)}
+.pagent-progress-count{flex:none;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.pagent-progress-other{flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px}
+.pagent-hero-mode [class*="_headline"]{display:none}
+.pagent-hero-mode [class*="_heroWorkspaceRow"]{display:none}
+.pagent-hero-host{display:flex;justify-content:center;align-items:center;width:100%;box-sizing:border-box;padding:8px 16px 18px}
+.pagent-hero-identity{display:flex;align-items:center;gap:10px;min-width:0;max-width:min(92%,520px);padding:9px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 6px 18px rgba(0,0,0,.12)}
+.pagent-hero-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:17px;line-height:1.4;font-weight:600;letter-spacing:.01em}
+.pagent-hero-group-avatar{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}
+.pagent-hero-rename{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:1;cursor:pointer}
+.pagent-hero-rename:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
+.pagent-hero-rename:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-header-mode [class*="_crumbs"],.pagent-header-mode [class*="_headerActions"]{display:none}
+.pagent-header-host{display:flex;align-items:center;min-width:0;flex:none}
+.pagent-header-identity{display:flex;align-items:center;gap:8px;min-width:0;max-width:min(48vw,420px)}
+.pagent-header-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.4;font-weight:600;letter-spacing:.01em}
+.pagent-header-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.pagent-display-history{box-sizing:border-box;width:100%;margin:0 auto 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
+.pagent-display-history-head{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:34px;padding:6px 11px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;text-align:left;cursor:pointer}
+.pagent-display-history-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.pagent-display-history-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-display-history-title{flex:none;font-size:11.5px;line-height:1.4;font-weight:600;letter-spacing:.01em}
+.pagent-display-history-count{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-display-history-chevron{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1}
+.pagent-display-history-body{display:flex;flex-direction:column;gap:10px;max-height:min(38vh,420px);overflow:auto;padding:2px 12px 12px;border-top:1px solid var(--dsw-alias-border-l1)}
+.pagent-display-message{display:flex;flex-direction:column;gap:3px;padding:6px 0 6px 9px;border-left:2px solid var(--dsw-alias-border-l1);min-width:0}
+.pagent-display-message[data-role="assistant"]{border-left-color:var(--dsw-alias-brand-primary)}
+.pagent-display-role{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4;font-weight:600;letter-spacing:.02em}
+.pagent-display-text{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.pagent-display-history-empty{margin:0;padding:8px 0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5}
 @media (max-width:820px){.pagent-manager{grid-template-columns:minmax(0,1fr)}.pagent-page{padding:20px 16px 40px}.pagent-help-grid{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.pagent-sk{animation:none}}
 `;
@@ -462,10 +740,13 @@ window.__ModuleLoader__.load({
       let error = null;
       let loading = null;
       let activeId = null;
+      let activeGroupId = null;
       try {
         activeId = window.localStorage.getItem('pagent-active-identity');
+        activeGroupId = window.localStorage.getItem('pagent-active-group');
       } catch {
         activeId = null;
+        activeGroupId = null;
       }
 
       const ensureActive = () => {
@@ -477,7 +758,7 @@ window.__ModuleLoader__.load({
         for (const listener of [...listeners]) listener();
       };
       return {
-        snapshot: () => ({ state, error, activeId }),
+        snapshot: () => ({ state, error, activeId, activeGroupId }),
         subscribe(listener) {
           listeners.add(listener);
           return () => {
@@ -512,6 +793,17 @@ window.__ModuleLoader__.load({
             window.localStorage.setItem('pagent-active-identity', id);
           } catch {
             // A blocked storage API only loses the remembered identity.
+          }
+          emit();
+        },
+        setActiveGroup(id) {
+          if (activeGroupId === id) return;
+          activeGroupId = id;
+          try {
+            if (id === null) window.localStorage.removeItem('pagent-active-group');
+            else window.localStorage.setItem('pagent-active-group', id);
+          } catch {
+            // A blocked storage API only loses the remembered group.
           }
           emit();
         },
@@ -554,6 +846,43 @@ window.__ModuleLoader__.load({
       if (typeof identity.avatar === 'string' && identity.avatar.trim() !== '') return identity.avatar.trim();
       const first = Array.from(String(identity.name ?? '').trim())[0];
       return first === undefined ? 'P' : first.toUpperCase();
+    }
+
+    /**
+     * Render the small, safe subset of Markdown group replies commonly use:
+     * bold, inline code, and http(s) links. Everything else stays literal text.
+     * @param text - message text.
+     * @returns React nodes with preserved line breaks.
+     */
+    function renderMessageText(text) {
+      const lines = String(text ?? '').split('\n');
+      const inline = (line, keyPrefix) => {
+        const nodes = [];
+        const pattern = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+        let last = 0;
+        let match;
+        while ((match = pattern.exec(line)) !== null) {
+          if (match.index > last) nodes.push(line.slice(last, match.index));
+          if (match[1] !== undefined) nodes.push(h('strong', { key: `${keyPrefix}-b-${match.index}` }, match[1]));
+          else if (match[2] !== undefined) nodes.push(h('code', { key: `${keyPrefix}-c-${match.index}`, className: 'pagent-group-inline-code' }, match[2]));
+          else if (match[3] !== undefined) {
+            nodes.push(
+              h('a', { key: `${keyPrefix}-a-${match.index}`, href: match[4], target: '_blank', rel: 'noreferrer' }, match[3]),
+            );
+          }
+          last = match.index + match[0].length;
+        }
+        if (last < line.length) nodes.push(line.slice(last));
+        return nodes;
+      };
+      return lines.map((line, index) =>
+        h(
+          'span',
+          { key: index },
+          inline(line, index),
+          index < lines.length - 1 ? h('br', { key: `br-${index}` }) : null,
+        ),
+      );
     }
 
     /**
@@ -662,6 +991,42 @@ window.__ModuleLoader__.load({
      * @param identityId - identity to open.
      * @returns when navigation was requested.
      */
+    /**
+     * Prefer a real conversation over a blank Session the shipped New Session
+     * hero may have created in an identity workspace. The client catalog knows
+     * which rows are blank; walk the workspace newest-first.
+     * @param ctx - client plugin context.
+     * @param workspaceId - identity workspace.
+     * @param fallback - Session id returned by the Host.
+     * @returns a private, non-blank Session id, or null when only group,
+     *   archived, subagent, or blank Sessions are available.
+     */
+    function realSessionFor(ctx, workspaceId, fallback) {
+      if (typeof workspaceId !== 'string') return fallback;
+      const list = ctx.get('sessions')?.list.getSnapshot();
+      const workspaceSnapshot = ctx.get('workspaces')?.list.getSnapshot();
+      const workspace = workspaceSnapshot?.items?.find((item) => item.workspaceId === workspaceId);
+      if (list === undefined || workspace === undefined) return fallback;
+      const groupSessions = new Set((store.snapshot().state?.groups ?? []).map((group) => group.id ?? group.sessionId));
+      const archived = new Set(workspaceSnapshot?.archivedSessionIds ?? []);
+      // A group Session and a subagent turn are never an identity's private
+      // conversation. An archived Session is never opened either: the shipped
+      // sidebar holds a released reference and fails the navigation.
+      const rejected = (id) =>
+        groupSessions.has(id) ||
+        archived.has(id) ||
+        list.byId[id]?.origin === 'subagent' ||
+        list.byId[id]?.parentSessionId !== undefined;
+      const identity = store.snapshot().state?.identities?.find((item) => item.home.workspaceId === workspaceId);
+      if (identity?.freshSessionId === fallback && !rejected(fallback)) return fallback;
+      const usable = workspace.sessionIds.find(
+        (id) => !rejected(id) && list.byId[id] !== undefined && list.byId[id].blank === false,
+      );
+      if (usable !== undefined) return usable;
+      if (typeof fallback === 'string' && fallback !== '' && !rejected(fallback)) return fallback;
+      return null;
+    }
+
     async function openIdentity(ctx, identityId) {
       const result = await requestJson(OPEN_URL, {
         method: 'POST',
@@ -674,8 +1039,12 @@ window.__ModuleLoader__.load({
       const ui = ctx.get('uiWorkspace');
       if (ui === undefined) throw new Error('personal-agent: workspace navigation is unavailable');
       store.setActive(identityId);
-      if (typeof result.data.sessionId === 'string' && result.data.sessionId !== '') {
-        ui.openSession(result.data.sessionId);
+      store.setActiveGroup(null);
+      const sessionId = typeof result.data.sessionId === 'string' && result.data.sessionId !== ''
+        ? realSessionFor(ctx, result.data.workspaceId, result.data.sessionId)
+        : null;
+      if (typeof sessionId === 'string' && sessionId !== '') {
+        ui.openSession(sessionId);
       } else {
         ui.startSession(result.data.workspaceId, { agentPreset: 'personal' });
       }
@@ -700,6 +1069,7 @@ window.__ModuleLoader__.load({
       }
       const ui = ctx.get('uiWorkspace');
       if (ui === undefined) throw new Error('personal-agent: workspace navigation is unavailable');
+      store.setActiveGroup(null);
       if (typeof result.data.sessionId === 'string' && result.data.sessionId !== '') {
         ui.openSession(result.data.sessionId);
       } else {
@@ -758,7 +1128,31 @@ window.__ModuleLoader__.load({
         const wide = props.wide !== false;
         const disabled = busy !== null || projectBusy !== null;
 
-        const open = async (identityId) => {
+        const openHistory = (identity) => {
+        const workspace = workspaceList?.items?.find((item) => item.workspaceId === identity.home.workspaceId);
+        const groupIds = new Set(groups.map((group) => group.id ?? group.sessionId));
+        const sessions = (workspace?.sessionIds ?? [])
+          .map((id) => sessionList?.byId?.[id])
+          .filter(
+            (session) =>
+              session !== undefined &&
+              session.blank !== true &&
+              !groupIds.has(session.id) &&
+              session.id !== conversationFocus.sessionId,
+          )
+          .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+        setHistoryIdentity(identity);
+        setHistorySessions(sessions);
+      };
+
+      const openHistorySession = (sessionId) => {
+        conversationFocus.historySessionId = sessionId;
+        const ui = ctx.get('uiWorkspace');
+        if (ui !== undefined) ui.openSession(sessionId);
+        setHistoryIdentity(null);
+      };
+
+      const open = async (identityId) => {
           setBusy(identityId);
           setFailure(null);
           try {
@@ -970,6 +1364,197 @@ window.__ModuleLoader__.load({
           ),
           failure === null ? null : h('p', { className: 'pagent-idlist-error', role: 'alert' }, failure),
           wide ? h('p', { className: 'pagent-idlist-hint' }, tr('identities.hint')) : null,
+        );
+      };
+    }
+
+    /**
+     * Build the multi-agent group feed page. Every participant is its own
+     * agent; the page shows one merged feed and never inserts a host voice.
+     * @param ctx - client plugin context.
+     * @returns the page component.
+     */
+    function makeGroupPage(ctx) {
+      return function GroupPage(props) {
+        const tr = translatorOf(props);
+        const { state, activeGroupId } = useStoreSnapshot();
+        const group = state?.groups?.find((candidate) => candidate.mode === 'multi' && candidate.id === activeGroupId) ?? null;
+        const [feed, setFeed] = React.useState(null);
+        const [draft, setDraft] = React.useState('');
+        const [sending, setSending] = React.useState(false);
+        const [failure, setFailure] = React.useState(null);
+        const feedRef = React.useRef(null);
+
+        const groupId = group?.id ?? null;
+        React.useEffect(() => {
+          setFeed(null);
+          if (groupId === null) return undefined;
+          let cancelled = false;
+          let busy = false;
+          const tick = async () => {
+            if (cancelled || busy) return;
+            busy = true;
+            try {
+              const result = await requestJson(GROUP_STATE_URL, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ groupId }),
+              });
+              if (!cancelled && result.ok && result.data?.ok === true) {
+                setFeed(result.data);
+                setFailure(null);
+              }
+            } catch (error) {
+              if (!cancelled) setFailure(messageOf(error));
+            } finally {
+              busy = false;
+            }
+          };
+          void tick();
+          const timer = setInterval(() => void tick(), 1000);
+          return () => {
+            cancelled = true;
+            clearInterval(timer);
+          };
+        }, [groupId]);
+
+        const messages = Array.isArray(feed?.messages) ? feed.messages : [];
+        const participants = Array.isArray(feed?.group?.participants) ? feed.group.participants : (group?.participants ?? []);
+        const running = participants.filter((participant) => participant.running === true);
+        const messageCount = messages.length;
+        React.useEffect(() => {
+          const node = feedRef.current;
+          if (node !== null) node.scrollTop = node.scrollHeight;
+        }, [messageCount, running.length]);
+
+        if (group === null) {
+          return h(
+            'div',
+            { className: 'pagent-page' },
+            h('div', { className: 'pagent-page-inner' }, h('p', { className: 'pagent-page-empty' }, tr('groups.empty'))),
+          );
+        }
+
+        const send = async () => {
+          const text = draft.trim();
+          if (text === '' || sending) return;
+          setSending(true);
+          setFailure(null);
+          try {
+            const result = await requestJson(GROUP_SEND_URL, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ groupId: group.id, text }),
+            });
+            if (!result.ok || result.data?.ok !== true) {
+              throw new Error(result.data?.message ?? `HTTP ${result.status}`);
+            }
+            setDraft('');
+            if (result.data.message !== undefined) {
+              setFeed((current) => (current === null ? current : { ...current, messages: [...(current.messages ?? []), result.data.message] }));
+            }
+            if (Array.isArray(result.data.failures) && result.data.failures.length > 0) {
+              setFailure(tr('groups.sendPartial', { count: result.data.failures.length }));
+            }
+          } catch (error) {
+            setFailure(tr('groups.sendFailed', { message: messageOf(error) }));
+          } finally {
+            setSending(false);
+          }
+        };
+
+        const identityOfMessage = (message) => participants.find((participant) => participant.id === message.identityId) ?? { name: message.name ?? '—', accent: '#5b5bd6', avatar: '' };
+        const timeOf = (value) => {
+          const date = new Date(value);
+          return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        };
+
+        return h(
+          'div',
+          { className: 'pagent-group-page' },
+          h(
+            'div',
+            { className: 'pagent-group-page-head' },
+            h(
+              'div',
+              { className: 'pagent-group-page-title' },
+              h('span', { className: 'pagent-group-page-glyph' }, h(IdentitySectionIcon, { size: 18 })),
+              h('span', { className: 'pagent-group-page-name', title: group.name }, group.name),
+            ),
+            h(
+              'div',
+              { className: 'pagent-group-page-people' },
+              participants.map((participant) =>
+                h('span', { key: participant.id, className: 'pagent-group-page-person', title: participant.role ?? '' }, h(Avatar, { identity: participant, size: 18 })),
+              ),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pagent-group-feed', ref: feedRef, role: 'log', 'aria-live': 'polite' },
+            messages.length === 0
+              ? h('p', { className: 'pagent-group-feed-empty' }, tr('groups.emptyFeed'))
+              : messages.map((message) =>
+                  message.role === 'user'
+                    ? h(
+                        'div',
+                        { key: message.id, className: 'pagent-group-message', 'data-role': 'user' },
+                        h('div', { className: 'pagent-group-bubble pagent-group-bubble-user' }, h('div', { className: 'pagent-group-message-text' }, renderMessageText(message.text))),
+                        h('time', { className: 'pagent-group-message-time' }, timeOf(message.time)),
+                      )
+                    : h(
+                        'div',
+                        { key: message.id, className: 'pagent-group-message', 'data-role': 'assistant' },
+                        h(Avatar, { identity: identityOfMessage(message), size: 24 }),
+                        h(
+                          'div',
+                          { className: 'pagent-group-message-body' },
+                          h(
+                            'div',
+                            { className: 'pagent-group-message-meta' },
+                            h('span', { className: 'pagent-group-message-name' }, message.name ?? identityOfMessage(message).name),
+                            h('time', { className: 'pagent-group-message-time' }, timeOf(message.time)),
+                          ),
+                          h('div', { className: 'pagent-group-bubble' }, h('div', { className: 'pagent-group-message-text' }, renderMessageText(message.text))),
+                        ),
+                      ),
+                ),
+            running.length > 0
+              ? h(
+                  'div',
+                  { className: 'pagent-group-typing' },
+                  running.map((participant) => h('span', { key: participant.id }, `${participant.name} 正在回复…`)),
+                )
+              : null,
+          ),
+          failure === null ? null : h('p', { className: 'pagent-group-page-error', role: 'alert' }, failure),
+          h(
+            'div',
+            { className: 'pagent-group-composer' },
+            h('textarea', {
+              className: 'pagent-group-input',
+              value: draft,
+              rows: 3,
+              placeholder: tr('groups.composePlaceholder'),
+              onChange: (event) => setDraft(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void send();
+                }
+              },
+            }),
+            h(
+              'div',
+              { className: 'pagent-group-composer-actions' },
+              h('span', { className: 'pagent-group-composer-hint' }, tr('groups.mentionHint')),
+              h(
+                'button',
+                { type: 'button', className: 'pagent-button pagent-button-primary', onClick: () => void send(), disabled: sending || draft.trim() === '' },
+                sending ? tr('groups.sending') : tr('groups.send'),
+              ),
+            ),
+          ),
         );
       };
     }
@@ -1655,6 +2240,244 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Render one modal dialog over the app. The mask closes on click; Escape
+     * closes; content is a normal themed card.
+     * @param props.onClose - dismiss handler.
+     * @param props.label - accessible dialog name.
+     * @param props.children - dialog content.
+     */
+    function Modal(props) {
+      React.useEffect(() => {
+        const onKey = (event) => {
+          if (event.key === 'Escape') props.onClose();
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+      }, [props.onClose]);
+      return ReactDOM.createPortal(
+        h(
+          'div',
+          {
+            className: 'pagent-dialog-mask',
+            role: 'presentation',
+            onMouseDown: (event) => {
+              if (event.target === event.currentTarget) props.onClose();
+            },
+          },
+          h(
+            'div',
+            { className: 'pagent-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': props.label },
+            props.children,
+          ),
+        ),
+        document.body,
+      );
+    }
+
+    /**
+     * Choose the participants of a new group conversation.
+     * @param props - identities, selection, name, busy/error, handlers, translator.
+     */
+    function GroupPickerDialog(props) {
+      const selectedIdentities = props.identities.filter((identity) => props.selected.includes(identity.id));
+      const members = selectedIdentities.map((identity) => identity.name).join(' + ');
+      return h(
+        Modal,
+        { onClose: props.onClose, label: props.tr('groups.pickTitle') },
+        h(
+          'div',
+          { className: 'pagent-dialog-head' },
+          h('h2', { className: 'pagent-dialog-title' }, props.tr('groups.pickTitle')),
+          h('p', { className: 'pagent-dialog-text' }, props.tr('groups.pickHint')),
+        ),
+        h(
+          'div',
+          { className: 'pagent-group-options' },
+          props.identities.map((identity) =>
+            h(
+              'label',
+              {
+                key: identity.id,
+                className: 'pagent-group-option',
+                'data-selected': props.selected.includes(identity.id) ? 'true' : 'false',
+              },
+              h('input', {
+                type: 'checkbox',
+                checked: props.selected.includes(identity.id),
+                onChange: () => props.onToggle(identity.id),
+              }),
+              h(Avatar, { identity, size: 24 }),
+              h(
+                'span',
+                { className: 'pagent-group-option-copy' },
+                h('span', { className: 'pagent-group-option-name' }, identity.name),
+                h('span', { className: 'pagent-group-option-role' }, identity.role === '' ? props.tr('identity.editTitle') : identity.role),
+              ),
+            ),
+          ),
+        ),
+        h(
+          'label',
+          { className: 'pagent-dialog-field' },
+          h('span', { className: 'pagent-label' }, props.tr('groups.name')),
+          h('input', {
+            className: 'pagent-input',
+            value: props.name,
+            placeholder: members === '' ? props.tr('groups.namePlaceholder') : members,
+            maxLength: 120,
+            onChange: (event) => props.onNameChange(event.target.value),
+          }),
+        ),
+        props.error === null ? null : h('p', { className: 'pagent-message', 'data-tone': 'error', role: 'alert' }, props.error),
+        h(
+          'div',
+          { className: 'pagent-dialog-actions' },
+          h('button', { type: 'button', className: 'pagent-button', onClick: props.onClose, disabled: props.busy }, props.tr('groups.cancel')),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'pagent-button pagent-button-primary',
+              onClick: props.onStart,
+              disabled: props.busy || selectedIdentities.length < 2,
+            },
+            props.busy ? props.tr('groups.starting') : props.tr('groups.start'),
+          ),
+        ),
+      );
+    }
+
+    /**
+     * Confirm closing one group and archiving its conversation.
+     * @param props - group, busy/error, handlers, translator.
+     */
+    function CloseGroupDialog(props) {
+      return h(
+        Modal,
+        { onClose: props.onClose, label: props.tr('groups.closeTitle', { name: props.group.name }) },
+        h(
+          'div',
+          { className: 'pagent-dialog-head' },
+          h('h2', { className: 'pagent-dialog-title' }, props.tr('groups.closeTitle', { name: props.group.name })),
+          h('p', { className: 'pagent-dialog-text' }, props.tr('groups.closeText')),
+        ),
+        props.error === null ? null : h('p', { className: 'pagent-message', 'data-tone': 'error', role: 'alert' }, props.error),
+        h(
+          'div',
+          { className: 'pagent-dialog-actions' },
+          h('button', { type: 'button', className: 'pagent-button', onClick: props.onClose, disabled: props.busy }, props.tr('groups.cancel')),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'pagent-button pagent-button-danger',
+              onClick: props.onConfirm,
+              disabled: props.busy,
+            },
+            props.busy ? props.tr('groups.closing') : props.tr('groups.closeConfirm'),
+          ),
+        ),
+      );
+    }
+
+    /**
+     * Rename one group.
+     * @param props.group - group row.
+     * @param props.value - draft name.
+     * @param props.onChange - draft handler.
+     * @param props.busy / props.error - save state.
+     * @param props.onClose / props.onSave - handlers.
+     * @param props.tr - translator.
+     */
+    function RenameGroupDialog(props) {
+      return h(
+        Modal,
+        { onClose: props.onClose, label: props.tr('groups.renameTitle', { name: props.group.name }) },
+        h(
+          'div',
+          { className: 'pagent-dialog-head' },
+          h('h2', { className: 'pagent-dialog-title' }, props.tr('groups.renameTitle', { name: props.group.name })),
+        ),
+        h(
+          'label',
+          { className: 'pagent-dialog-field' },
+          h('span', { className: 'pagent-label' }, props.tr('groups.renameLabel')),
+          h('input', {
+            className: 'pagent-input',
+            value: props.value,
+            maxLength: 120,
+            autoFocus: true,
+            onChange: (event) => props.onChange(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter') props.onSave();
+            },
+          }),
+        ),
+        props.error === null ? null : h('p', { className: 'pagent-message', 'data-tone': 'error', role: 'alert' }, props.error),
+        h(
+          'div',
+          { className: 'pagent-dialog-actions' },
+          h('button', { type: 'button', className: 'pagent-button', onClick: props.onClose, disabled: props.busy }, props.tr('groups.cancel')),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'pagent-button pagent-button-primary',
+              onClick: props.onSave,
+              disabled: props.busy || props.value.trim() === '',
+            },
+            props.busy ? props.tr('groups.renaming') : props.tr('groups.renameSave'),
+          ),
+        ),
+      );
+    }
+
+    /**
+     * List an identity's earlier conversations and reopen one read-only in the
+     * normal Chat view. Opening does not change any model context.
+     * @param props.identity - identity whose sessions are listed.
+     * @param props.sessions - non-blank non-group Session summaries, newest first.
+     * @param props.onOpen / props.onClose - handlers.
+     * @param props.tr - translator.
+     */
+    function HistoryDialog(props) {
+      return h(
+        Modal,
+        { onClose: props.onClose, label: props.tr('history.title', { name: props.identity.name }) },
+        h(
+          'div',
+          { className: 'pagent-dialog-head' },
+          h('h2', { className: 'pagent-dialog-title' }, props.tr('history.title', { name: props.identity.name })),
+        ),
+        props.sessions.length === 0
+          ? h('p', { className: 'pagent-dialog-text' }, props.tr('history.empty'))
+          : h(
+              'div',
+              { className: 'pagent-history-list' },
+              props.sessions.map((session) => {
+                const at = typeof session.updatedAt === 'number' ? new Date(session.updatedAt) : null;
+                return h(
+                  'button',
+                  {
+                    key: session.id,
+                    type: 'button',
+                    className: 'pagent-history-item',
+                    onClick: () => props.onOpen(session.id),
+                  },
+                  h('span', { className: 'pagent-history-title' }, session.displayTitle ?? session.title ?? session.id),
+                  h('span', { className: 'pagent-history-time' }, at === null ? '' : at.toLocaleString()),
+                );
+              }),
+            ),
+        h(
+          'div',
+          { className: 'pagent-dialog-actions' },
+          h('button', { type: 'button', className: 'pagent-button', onClick: props.onClose }, props.tr('history.close')),
+        ),
+      );
+    }
+
+    /**
      * Build the panellist icon for one identity row.
      * @param identity - identity record.
      * @returns the icon component.
@@ -1690,6 +2513,30 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Current Session/identity focus reported by the composer status component.
+     * The auto-switch poll reads it and only switches while an identity
+     * conversation is on screen.
+     */
+    const conversationFocus = { identityId: null, sessionId: null, historySessionId: null, switching: false };
+
+    /**
+     * Subscribe to one client observable snapshot.
+     * @param source - observable with getSnapshot/subscribe, or undefined.
+     * @returns its current snapshot.
+     */
+    function useObservable(source) {
+      const subscribe = React.useCallback(
+        (onChange) => {
+          if (typeof source?.subscribe !== 'function') return () => {};
+          return source.subscribe(onChange);
+        },
+        [source],
+      );
+      const read = React.useCallback(() => source?.getSnapshot?.() ?? null, [source]);
+      return React.useSyncExternalStore(subscribe, read, read);
+    }
+
+    /**
      * Render the identity module mounted directly above the shipped Workspace
      * browser. Rows open an identity conversation immediately; the header's
      * manage action opens the manager page.
@@ -1700,13 +2547,173 @@ window.__ModuleLoader__.load({
       const { state, activeId } = useStoreSnapshot();
       const [busy, setBusy] = React.useState(null);
       const [failure, setFailure] = React.useState(null);
+      const [groupBusy, setGroupBusy] = React.useState(false);
+      const [groupError, setGroupError] = React.useState(null);
+      const [groupPicker, setGroupPicker] = React.useState(false);
+      const [groupSelected, setGroupSelected] = React.useState([]);
+      const [groupName, setGroupName] = React.useState('');
+      const [pendingDelete, setPendingDelete] = React.useState(null);
+      const [deleteBusy, setDeleteBusy] = React.useState(false);
+      const [deleteError, setDeleteError] = React.useState(null);
+      const [renamingGroup, setRenamingGroup] = React.useState(null);
+      const [renameValue, setRenameValue] = React.useState('');
+      const [renameBusy, setRenameBusy] = React.useState(false);
+      const [renameError, setRenameError] = React.useState(null);
       const translate = ctx.locale.bind(NS);
       const tr = (key, vars) => interpolate(translate(key), vars);
       const identities = state?.identities ?? [];
+      const groups = state?.groups ?? [];
+      const [historyIdentity, setHistoryIdentity] = React.useState(null);
+      const [historySessions, setHistorySessions] = React.useState([]);
+      const sessionSource = ctx.get('sessions');
+      const workspaceSource = ctx.get('workspaces');
+      const sessionList = useObservable(sessionSource?.list);
+      const workspaceList = useObservable(workspaceSource?.list);
+      const thinking = useThinkingVisible();
 
       const manage = () => {
         const layout = ctx.get('layout');
         if (layout !== undefined) layout.selectPanel(PANEL_ID);
+      };
+
+      const openGroupPicker = () => {
+        if (identities.length < 2) return;
+        setGroupSelected(identities.map((identity) => identity.id));
+        setGroupName('');
+        setGroupError(null);
+        setGroupPicker(true);
+      };
+
+      const toggleGroupIdentity = (identityId) => {
+        setGroupSelected((current) =>
+          current.includes(identityId) ? current.filter((id) => id !== identityId) : [...current, identityId],
+        );
+      };
+
+      const startGroup = async () => {
+        const selected = identities.filter((identity) => groupSelected.includes(identity.id));
+        if (selected.length < 2 || groupBusy) {
+          setGroupError(tr('groups.needTwo'));
+          return;
+        }
+        setGroupBusy(true);
+        setGroupError(null);
+        try {
+          const result = await requestJson(GROUP_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              participantIds: selected.map((identity) => identity.id),
+              name: groupName.trim() === '' ? selected.map((identity) => identity.name).join(' + ') : groupName.trim(),
+            }),
+          });
+          if (!result.ok || result.data?.ok !== true) {
+            throw new Error(result.data?.message ?? `HTTP ${result.status}`);
+          }
+          setGroupPicker(false);
+          await store.load(true);
+          if (typeof result.data.groupId === 'string') {
+            store.setActiveGroup(result.data.groupId);
+            const layout = ctx.get('layout');
+            if (layout !== undefined) layout.selectPanel(GROUP_PANEL_ID);
+          } else if (typeof result.data.sessionId === 'string') {
+            const ui = ctx.get('uiWorkspace');
+            if (ui !== undefined) ui.openSession(result.data.sessionId);
+          }
+        } catch (error) {
+          setGroupError(messageOf(error));
+        } finally {
+          setGroupBusy(false);
+        }
+      };
+
+      const closeGroup = async () => {
+        if (pendingDelete === null) return;
+        const group = pendingDelete;
+        setDeleteBusy(true);
+        setDeleteError(null);
+        try {
+          const result = await requestJson(GROUP_REMOVE_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ groupId: group.id ?? group.sessionId }),
+          });
+          if (!result.ok || result.data?.ok !== true) {
+            throw new Error(result.data?.message ?? `HTTP ${result.status}`);
+          }
+          setPendingDelete(null);
+          await store.load(true);
+          const nextIdentity = Array.isArray(group.participants)
+            ? group.participants[0]?.id
+            : typeof group.host?.id === 'string'
+              ? group.host.id
+              : undefined;
+          if (typeof nextIdentity === 'string') {
+            try {
+              await openIdentity(ctx, nextIdentity);
+            } catch {
+              // The identity may have been removed with the group.
+            }
+          } else {
+            store.setActiveGroup(null);
+          }
+        } catch (error) {
+          setDeleteError(tr('groups.closeFailed', { message: messageOf(error) }));
+        } finally {
+          setDeleteBusy(false);
+        }
+      };
+
+      const openGroup = (group) => {
+        if (group.mode === 'multi' && typeof group.id === 'string') {
+          store.setActiveGroup(group.id);
+          const layout = ctx.get('layout');
+          if (layout !== undefined) layout.selectPanel(GROUP_PANEL_ID);
+          return;
+        }
+        store.setActiveGroup(null);
+        const ui = ctx.get('uiWorkspace');
+        if (ui !== undefined) ui.openSession(group.sessionId);
+      };
+
+      const saveGroupRename = async () => {
+        if (renamingGroup === null) return;
+        const value = renameValue.trim();
+        if (value === '') return;
+        setRenameBusy(true);
+        setRenameError(null);
+        try {
+          await renameGroup(ctx, renamingGroup.id ?? renamingGroup.sessionId, value);
+          setRenamingGroup(null);
+        } catch (error) {
+          setRenameError(tr('groups.renameFailed', { message: messageOf(error) }));
+        } finally {
+          setRenameBusy(false);
+        }
+      };
+
+      const openHistory = (identity) => {
+        const workspace = workspaceList?.items?.find((item) => item.workspaceId === identity.home.workspaceId);
+        const groupIds = new Set(groups.map((group) => group.id ?? group.sessionId));
+        const sessions = (workspace?.sessionIds ?? [])
+          .map((id) => sessionList?.byId?.[id])
+          .filter(
+            (session) =>
+              session !== undefined &&
+              session.blank !== true &&
+              !groupIds.has(session.id) &&
+              session.id !== conversationFocus.sessionId,
+          )
+          .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+        setHistoryIdentity(identity);
+        setHistorySessions(sessions);
+      };
+
+      const openHistorySession = (sessionId) => {
+        conversationFocus.historySessionId = sessionId;
+        const ui = ctx.get('uiWorkspace');
+        if (ui !== undefined) ui.openSession(sessionId);
+        setHistoryIdentity(null);
       };
 
       const open = async (identityId) => {
@@ -1729,15 +2736,44 @@ window.__ModuleLoader__.load({
           { className: 'pagent-identity-head' },
           h('span', { className: 'pagent-identity-title' }, tr('identities.title')),
           h(
-            'button',
-            {
-              type: 'button',
-              className: 'pagent-identity-manage',
-              title: tr('identities.manage'),
-              'aria-label': tr('identities.manage'),
-              onClick: manage,
-            },
-            '＋',
+            'div',
+            { className: 'pagent-identity-head-actions' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'pagent-identity-thinking',
+                title: thinking ? tr('thinking.hide') : tr('thinking.show'),
+                'aria-label': thinking ? tr('thinking.hide') : tr('thinking.show'),
+                'aria-pressed': thinking ? 'true' : 'false',
+                'data-hidden': thinking ? 'false' : 'true',
+                onClick: () => setThinkingVisible(!thinking),
+              },
+              thinking ? '◉' : '◎',
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'pagent-identity-group',
+                title: identities.length < 2 ? tr('groups.needTwo') : tr('groups.create'),
+                'aria-label': tr('groups.create'),
+                disabled: identities.length < 2 || groupBusy,
+                onClick: () => openGroupPicker(),
+              },
+              h(IdentitySectionIcon, { size: 15 }),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'pagent-identity-manage',
+                title: tr('identities.manage'),
+                'aria-label': tr('identities.manage'),
+                onClick: manage,
+              },
+              '＋',
+            ),
           ),
         ),
         identities.length === 0
@@ -1747,29 +2783,569 @@ window.__ModuleLoader__.load({
               { className: 'pagent-identity-rows' },
               identities.map((identity) =>
                 h(
-                  'button',
-                  {
-                    key: identity.id,
-                    type: 'button',
-                    className: 'pagent-identity-row',
-                    'data-active': identity.id === activeId ? 'true' : 'false',
-                    'aria-current': identity.id === activeId ? 'true' : undefined,
-                    disabled: busy !== null,
-                    title: identity.role === '' ? identity.name : `${identity.name} — ${identity.role}`,
-                    onClick: () => void open(identity.id),
-                  },
-                  h(Avatar, { identity, size: 20 }),
+                  'div',
+                  { key: identity.id, className: 'pagent-identity-row-wrap' },
                   h(
-                    'span',
-                    { className: 'pagent-identity-copy' },
-                    h('span', { className: 'pagent-identity-name' }, identity.name),
-                    h('span', { className: 'pagent-identity-role' }, identity.role === '' ? tr('identity.editTitle') : identity.role),
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'pagent-identity-row',
+                      'data-active': identity.id === activeId ? 'true' : 'false',
+                      'aria-current': identity.id === activeId ? 'true' : undefined,
+                      disabled: busy !== null,
+                      title: identity.role === '' ? identity.name : `${identity.name} — ${identity.role}`,
+                      onClick: () => void open(identity.id),
+                    },
+                    h(Avatar, { identity, size: 20 }),
+                    h(
+                      'span',
+                      { className: 'pagent-identity-copy' },
+                      h('span', { className: 'pagent-identity-name' }, identity.name),
+                      h('span', { className: 'pagent-identity-role' }, identity.role === '' ? tr('identity.editTitle') : identity.role),
+                    ),
+                    busy === identity.id ? h('span', { className: 'pagent-identity-busy' }, '…') : null,
                   ),
-                  busy === identity.id ? h('span', { className: 'pagent-identity-busy' }, '…') : null,
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'pagent-identity-history',
+                      title: tr('history.open'),
+                      'aria-label': tr('history.open'),
+                      onClick: () => openHistory(identity),
+                    },
+                    '↺',
+                  ),
                 ),
               ),
             ),
+        groups.length === 0
+          ? null
+          : h(
+              'div',
+              { className: 'pagent-group-section' },
+              h('div', { className: 'pagent-group-label' }, tr('groups.title')),
+              groups.map((group) =>
+                h(
+                  'div',
+                  { key: group.id ?? group.sessionId, className: 'pagent-group-row-wrap' },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'pagent-group-row',
+                      title: group.name,
+                      onClick: () => openGroup(group),
+                    },
+                    h('span', { className: 'pagent-group-glyph' }, h(IdentitySectionIcon, { size: 14 })),
+                    h(
+                      'span',
+                      { className: 'pagent-group-copy' },
+                      h('span', { className: 'pagent-group-name' }, group.name),
+                      h(
+                        'span',
+                        { className: 'pagent-group-members' },
+                        tr('groups.memberCount', { count: group.mode === 'multi' ? (group.participants?.length ?? 0) : 1 + (group.guests?.length ?? 0) }),
+                      ),
+                    ),
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'pagent-group-rename',
+                      title: tr('groups.rename'),
+                      'aria-label': tr('groups.rename'),
+                      onClick: () => {
+                        setRenamingGroup(group);
+                        setRenameValue(group.name);
+                        setRenameError(null);
+                      },
+                    },
+                    '✎',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'pagent-group-delete',
+                      title: tr('groups.close'),
+                      'aria-label': tr('groups.close'),
+                      onClick: () => {
+                        setPendingDelete(group);
+                        setDeleteError(null);
+                      },
+                    },
+                    '×',
+                  ),
+                ),
+              ),
+            ),
+        groupError === null ? null : h('p', { className: 'pagent-identity-error', role: 'alert' }, groupError),
         failure === null ? null : h('p', { className: 'pagent-identity-error', role: 'alert' }, failure),
+        groupPicker
+          ? h(GroupPickerDialog, {
+              identities,
+              selected: groupSelected,
+              name: groupName,
+              busy: groupBusy,
+              error: groupError,
+              tr,
+              onToggle: toggleGroupIdentity,
+              onNameChange: setGroupName,
+              onClose: () => setGroupPicker(false),
+              onStart: () => void startGroup(),
+            })
+          : null,
+        pendingDelete === null
+          ? null
+          : h(CloseGroupDialog, {
+              group: pendingDelete,
+              busy: deleteBusy,
+              error: deleteError,
+              tr,
+              onClose: () => setPendingDelete(null),
+              onConfirm: () => void closeGroup(),
+            }),
+        renamingGroup === null
+          ? null
+          : h(RenameGroupDialog, {
+              group: renamingGroup,
+              value: renameValue,
+              busy: renameBusy,
+              error: renameError,
+              tr,
+              onChange: setRenameValue,
+              onClose: () => setRenamingGroup(null),
+              onSave: () => void saveGroupRename(),
+            }),
+        historyIdentity === null
+          ? null
+          : h(HistoryDialog, {
+              identity: historyIdentity,
+              sessions: historySessions,
+              tr,
+              onOpen: openHistorySession,
+              onClose: () => setHistoryIdentity(null),
+            }),
+      );
+    }
+
+    /**
+     * Compact running/progress strip in the composer dock. It shows the active
+     * identity task and how many of its sessions are working, and reports the
+     * current identity/Session so the auto-switch poll knows where the user is.
+     * @param props.ctx - client plugin context.
+     * @param props.sessionId - the Session owning this composer.
+     */
+    function PersonalProgress(props) {
+      const ctx = props.ctx;
+      const tr = translatorOf(props);
+      const { state } = useStoreSnapshot();
+      const sessions = ctx.get('sessions');
+      const workspaces = ctx.get('workspaces');
+      const sessionList = useObservable(sessions?.list);
+      const workspaceList = useObservable(workspaces?.list);
+      const projectedTodos = typeof props.useProjection === 'function' ? props.useProjection('todos') : null;
+      const sessionId = props.sessionId;
+
+      React.useEffect(() => {
+        if (state === null) void store.load();
+      }, [state === null]);
+
+      const workspace = workspaceList?.items?.find(
+        (item) => Array.isArray(item.sessionIds) && item.sessionIds.includes(sessionId),
+      );
+      const groupSession = state?.groups?.some((group) => group.sessionId === sessionId) === true;
+      const identity = groupSession
+        ? null
+        : state?.identities?.find((item) => item.home.workspaceId === workspace?.workspaceId) ?? null;
+
+      React.useEffect(() => {
+        if (typeof sessionId !== 'string') return undefined;
+        conversationFocus.identityId = identity?.id ?? null;
+        conversationFocus.sessionId = sessionId;
+        if (conversationFocus.historySessionId !== null && conversationFocus.historySessionId !== sessionId) {
+          conversationFocus.historySessionId = null;
+        }
+        return () => {
+          if (conversationFocus.sessionId === sessionId) {
+            conversationFocus.identityId = null;
+            conversationFocus.sessionId = null;
+          }
+        };
+      }, [identity?.id, sessionId]);
+
+      if (typeof sessionId !== 'string' || identity === null) return null;
+      const sessionIds = workspace?.sessionIds ?? [];
+      const summaries = sessionIds.map((id) => sessionList?.byId?.[id]).filter((item) => item !== undefined);
+      const running = summaries.filter((item) => item.running);
+      const currentRunning = sessionList?.byId?.[sessionId]?.running === true;
+      const currentTodos = Array.isArray(projectedTodos) && projectedTodos.length > 0
+        ? projectedTodos
+        : sessionList?.projectionsBySession?.[sessionId]?.values?.todos;
+      const todos =
+        Array.isArray(currentTodos) && currentTodos.length > 0
+          ? currentTodos
+          : (sessionIds
+              .map((id) => sessionList?.projectionsBySession?.[id]?.values?.todos)
+              .find((items) => Array.isArray(items) && items.length > 0) ?? []);
+      if (running.length === 0 && todos.length === 0) return null;
+      const active = todos.find((item) => item.status === 'in_progress') ?? null;
+      const done = todos.filter((item) => item.status === 'completed').length;
+      const total = todos.length;
+      const otherRunning = Math.max(0, running.length - (currentRunning ? 1 : 0));
+      const working = running.length > 0;
+      const detail = active?.content ?? (working ? tr('progress.running') : tr('progress.idle'));
+      return h(
+        'div',
+        {
+          className: 'pagent-progress',
+          'data-running': working ? 'true' : 'false',
+          role: 'status',
+          'aria-live': 'polite',
+          title: detail,
+        },
+        h('span', { className: 'pagent-progress-dot', 'aria-hidden': true }),
+        h('span', { className: 'pagent-progress-label' }, working ? tr('progress.working') : tr('progress.tasks')),
+        h('span', { className: 'pagent-progress-task' }, detail),
+        total > 0 ? h('span', { className: 'pagent-progress-count' }, tr('progress.completed', { done, total })) : null,
+        otherRunning > 0 ? h('span', { className: 'pagent-progress-other' }, tr('progress.other', { count: otherRunning })) : null,
+      );
+    }
+
+    /**
+     * Rename one group through the Host and refresh state.
+     * @param ctx - client plugin context.
+     * @param groupKey - group id or legacy host Session id.
+     * @param name - new name.
+     * @returns the accepted name.
+     */
+    async function renameGroup(ctx, groupKey, name) {
+      const result = await requestJson(GROUP_RENAME_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ groupId: groupKey, name }),
+      });
+      if (!result.ok || result.data?.ok !== true) {
+        throw new Error(result.data?.message ?? `HTTP ${result.status}`);
+      }
+      await store.load(true);
+      return result.data.name;
+    }
+
+    /**
+     * Personalize the blank-session hero: hide the shipped brand, workspace and
+     * preset chrome for an identity or group Session, and show only the agent's
+     * avatar/name (or the group name). Project Sessions keep the native hero.
+     * @param props.sessionId - current Session.
+     * @param props.ctx - client plugin context.
+     */
+    function HeroIdentity(props) {
+      const ctx = props.ctx;
+      const tr = translatorOf(props);
+      const { state } = useStoreSnapshot();
+      const sessions = ctx.get('sessions');
+      const workspaces = ctx.get('workspaces');
+      const sessionList = useObservable(sessions?.list);
+      const workspaceList = useObservable(workspaces?.list);
+      const sessionId = props.sessionId;
+      const markerRef = React.useRef(null);
+      const [host, setHost] = React.useState(null);
+      const [renameOpen, setRenameOpen] = React.useState(false);
+      const [renameValue, setRenameValue] = React.useState('');
+      const [renameBusy, setRenameBusy] = React.useState(false);
+      const [renameError, setRenameError] = React.useState(null);
+
+      React.useEffect(() => {
+        if (state === null) void store.load();
+      }, [state === null]);
+
+      const workspace = workspaceList?.items?.find(
+        (item) => Array.isArray(item.sessionIds) && item.sessionIds.includes(sessionId),
+      );
+      const group = state?.groups?.find((candidate) => candidate.sessionId === sessionId) ?? null;
+      const identity = group === null
+        ? state?.identities?.find((candidate) => candidate.home.workspaceId === workspace?.workspaceId) ?? null
+        : null;
+
+      React.useEffect(() => {
+        if ((group === null && identity === null) || markerRef.current === null) {
+          setHost(null);
+          return undefined;
+        }
+        const root = markerRef.current.closest('[data-phase="hero"]');
+        if (root === null) {
+          setHost(null);
+          return undefined;
+        }
+        const headline = root.querySelector('[class*="_headline"]');
+        const stack = headline?.parentElement ?? null;
+        const body = stack?.querySelector('[class*="_body"]') ?? null;
+        const target = body ?? stack ?? root;
+        const element = document.createElement('div');
+        element.className = 'pagent-hero-host';
+        target.appendChild(element);
+        root.classList.add('pagent-hero-mode');
+        setHost(element);
+        return () => {
+          element.remove();
+          root.classList.remove('pagent-hero-mode');
+          setHost(null);
+        };
+      }, [sessionId, group === null ? '' : group.sessionId, identity === null ? '' : identity.id]);
+
+      const saveRename = async () => {
+        if (group === null) return;
+        const value = renameValue.trim();
+        if (value === '') return;
+        setRenameBusy(true);
+        setRenameError(null);
+        try {
+          await renameGroup(ctx, group.sessionId, value);
+          setRenameOpen(false);
+        } catch (error) {
+          setRenameError(tr('groups.renameFailed', { message: messageOf(error) }));
+        } finally {
+          setRenameBusy(false);
+        }
+      };
+
+      const header = group !== null
+        ? h(
+            'div',
+            { className: 'pagent-hero-identity' },
+            h('span', { className: 'pagent-hero-avatar pagent-hero-group-avatar' }, h(IdentitySectionIcon, { size: 22 })),
+            h('span', { className: 'pagent-hero-name', title: group.name }, group.name),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'pagent-hero-rename',
+                title: tr('groups.rename'),
+                'aria-label': tr('groups.rename'),
+                onClick: () => {
+                  setRenameValue(group.name);
+                  setRenameError(null);
+                  setRenameOpen(true);
+                },
+              },
+              '✎',
+            ),
+          )
+        : identity !== null
+          ? h(
+              'div',
+              { className: 'pagent-hero-identity' },
+              h(Avatar, { identity, size: 40 }),
+              h('span', { className: 'pagent-hero-name', title: identity.name }, identity.name),
+            )
+          : null;
+
+      return h(
+        'span',
+        { ref: markerRef, style: { display: 'none' } },
+        host !== null && header !== null ? ReactDOM.createPortal(header, host) : null,
+        renameOpen && group !== null
+          ? h(RenameGroupDialog, {
+              group,
+              value: renameValue,
+              busy: renameBusy,
+              error: renameError,
+              tr,
+              onChange: setRenameValue,
+              onClose: () => setRenameOpen(false),
+              onSave: () => void saveRename(),
+            })
+          : null,
+      );
+    }
+
+    /**
+     * Personalize the active conversation header: hide the Session title and
+     * preset controls for identity and group Sessions, and show the agent's
+     * avatar/name or the group name in their place. Project headers are native.
+     * @param props.sessionId - current Session.
+     * @param props.ctx - client plugin context.
+     */
+    function HeaderIdentity(props) {
+      const ctx = props.ctx;
+      const { state } = useStoreSnapshot();
+      const sessions = ctx.get('sessions');
+      const workspaces = ctx.get('workspaces');
+      const workspaceList = useObservable(workspaces?.list);
+      const sessionId = props.sessionId;
+      const markerRef = React.useRef(null);
+      const [host, setHost] = React.useState(null);
+      const thinking = useThinkingVisible();
+
+      React.useEffect(() => {
+        if (state === null) void store.load();
+      }, [state === null]);
+
+      const workspace = workspaceList?.items?.find(
+        (item) => Array.isArray(item.sessionIds) && item.sessionIds.includes(sessionId),
+      );
+      const group = state?.groups?.find((candidate) => candidate.sessionId === sessionId) ?? null;
+      const identity = group === null
+        ? state?.identities?.find((candidate) => candidate.home.workspaceId === workspace?.workspaceId) ?? null
+        : null;
+
+      React.useEffect(() => {
+        if ((group === null && identity === null) || markerRef.current === null) {
+          setHost(null);
+          return undefined;
+        }
+        const header = markerRef.current.closest('header');
+        const cluster = header?.querySelector('[class*="_titleCluster"]');
+        if (header === null || cluster === null) {
+          setHost(null);
+          return undefined;
+        }
+        const root = markerRef.current.closest('[data-phase]');
+        const element = document.createElement('div');
+        element.className = 'pagent-header-host';
+        cluster.prepend(element);
+        header.classList.add('pagent-header-mode');
+        if (root !== null) root.classList.toggle('pagent-hide-thinking', !thinking);
+        setHost(element);
+        return () => {
+          element.remove();
+          header.classList.remove('pagent-header-mode');
+          if (root !== null) root.classList.remove('pagent-hide-thinking');
+          setHost(null);
+        };
+      }, [sessionId, group === null ? '' : group.sessionId, identity === null ? '' : identity.id, thinking]);
+
+      const content = group !== null
+        ? h(
+            'div',
+            { className: 'pagent-header-identity' },
+            h('span', { className: 'pagent-header-icon' }, h(IdentitySectionIcon, { size: 15 })),
+            h('span', { className: 'pagent-header-name', title: group.name }, group.name),
+          )
+        : identity !== null
+          ? h(
+              'div',
+              { className: 'pagent-header-identity' },
+              h(Avatar, { identity, size: 24 }),
+              h('span', { className: 'pagent-header-name', title: identity.name }, identity.name),
+            )
+          : null;
+
+      return h(
+        'span',
+        { ref: markerRef, style: { display: 'none' } },
+        host !== null && content !== null ? ReactDOM.createPortal(content, host) : null,
+      );
+    }
+
+    /**
+     * Display-only history for a fresh conversation. It fetches the previous
+     * conversation's text from the Host and renders it above the composer; the
+     * text never enters the new Session's model context.
+     * @param props.sessionId - current fresh Session.
+     * @param props.ctx - client plugin context.
+     */
+    function FreshHistoryDock(props) {
+      const ctx = props.ctx;
+      const tr = translatorOf(props);
+      const { state } = useStoreSnapshot();
+      const workspaces = ctx.get('workspaces');
+      const workspaceList = useObservable(workspaces?.list);
+      const sessionId = props.sessionId;
+      const [open, setOpen] = React.useState(true);
+      const [messages, setMessages] = React.useState(null);
+      const [failure, setFailure] = React.useState(false);
+
+      React.useEffect(() => {
+        if (state === null) void store.load();
+      }, [state === null]);
+
+      const workspace = workspaceList?.items?.find(
+        (item) => Array.isArray(item.sessionIds) && item.sessionIds.includes(sessionId),
+      );
+      const identity = state?.identities?.find(
+        (candidate) =>
+          candidate.home.workspaceId === workspace?.workspaceId &&
+          candidate.freshSessionId === sessionId,
+      ) ?? null;
+      const source = identity?.historySessionId ?? null;
+
+      React.useEffect(() => {
+        if (source === null) {
+          setMessages(null);
+          setFailure(false);
+          return undefined;
+        }
+        let cancelled = false;
+        setMessages(null);
+        setFailure(false);
+        void requestJson(TRANSCRIPT_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: source }),
+        })
+          .then((result) => {
+            if (cancelled) return;
+            if (!result.ok || result.data?.ok !== true || !Array.isArray(result.data.messages)) {
+              throw new Error(result.data?.message ?? `HTTP ${result.status}`);
+            }
+            setMessages(result.data.messages);
+          })
+          .catch(() => {
+            if (!cancelled) setFailure(true);
+          });
+        return () => {
+          cancelled = true;
+        };
+      }, [source]);
+
+      if (identity === null || source === null) return null;
+      const list = messages ?? [];
+      return h(
+        'section',
+        { className: 'pagent-display-history', 'data-open': open ? 'true' : 'false' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'pagent-display-history-head',
+            'aria-expanded': open,
+            onClick: () => setOpen((value) => !value),
+          },
+          h('span', { className: 'pagent-display-history-title' }, tr('history.displayTitle')),
+          h(
+            'span',
+            { className: 'pagent-display-history-count' },
+            tr('history.displayCount', { count: list.length }),
+          ),
+          h('span', { className: 'pagent-display-history-chevron', 'aria-hidden': true }, open ? '▾' : '▸'),
+        ),
+        open
+          ? h(
+              'div',
+              { className: 'pagent-display-history-body' },
+              failure
+                ? h('p', { className: 'pagent-display-history-empty' }, tr('history.displayFailed'))
+                : messages === null
+                  ? h('p', { className: 'pagent-display-history-empty' }, '…')
+                  : list.length === 0
+                    ? h('p', { className: 'pagent-display-history-empty' }, tr('history.displayEmpty'))
+                    : list.map((message) =>
+                        h(
+                          'div',
+                          { key: message.seq, className: 'pagent-display-message', 'data-role': message.role },
+                          h(
+                            'span',
+                            { className: 'pagent-display-role' },
+                            message.role === 'user' ? tr('history.you') : identity.name,
+                          ),
+                          h('p', { className: 'pagent-display-text' }, message.text),
+                        ),
+                      ),
+            )
+          : null,
       );
     }
 
@@ -1822,6 +3398,10 @@ window.__ModuleLoader__.load({
               const workspaceId = identity.home?.workspaceId;
               if (typeof workspaceId === 'string' && workspaceId !== '') workspaceIds.add(workspaceId);
             }
+            for (const group of state?.groups ?? []) {
+              const workspaceId = group.workspaceId;
+              if (typeof workspaceId === 'string' && workspaceId !== '') workspaceIds.add(workspaceId);
+            }
             const workspaces = ctx.get('workspaces');
             const snapshot = workspaces?.list.getSnapshot?.();
             const sessionIds = new Set();
@@ -1862,6 +3442,79 @@ window.__ModuleLoader__.load({
               locale: NS,
             },
             makeIdentityPage(ctx),
+          ),
+        );
+
+        ctx.slots.inject('main', () =>
+          ctx.slots.register(
+            {
+              name: 'main',
+              key: GROUP_PANEL_ID,
+              locale: NS,
+            },
+            makeGroupPage(ctx),
+          ),
+        );
+
+        // Blank-session hero personalization: identities show their avatar and
+        // name, groups show the group name, and the shipped brand/workspace/
+        // preset chrome is hidden only while one of those is on screen.
+        ctx.slots.inject('conversation.hero.options', () =>
+          ctx.slots.register(
+            {
+              name: 'conversation.hero.options',
+              id: 'personal-agent-hero',
+              order: 40,
+              locale: NS,
+              inject: (sessionId) => ({ sessionId }),
+            },
+            (props) => h(HeroIdentity, { ...props, ctx }),
+          ),
+        );
+
+        // Active conversation header personalization: identity avatar/name or
+        // group name, with the shipped session title/preset hidden only for
+        // those Sessions.
+        ctx.slots.inject('conversation.session.header.utilities', () =>
+          ctx.slots.register(
+            {
+              name: 'conversation.session.header.utilities',
+              id: 'personal-agent-header',
+              order: 5,
+              locale: NS,
+              inject: (sessionId) => ({ sessionId }),
+            },
+            (props) => h(HeaderIdentity, { ...props, ctx }),
+          ),
+        );
+
+        // Display-only history for a fresh conversation. It is a client-side
+        // transcript, not part of the new Session's model context.
+        ctx.slots.inject('conversation.input.dock', () =>
+          ctx.slots.register(
+            {
+              name: 'conversation.input.dock',
+              id: 'personal-agent-display-history',
+              order: 20,
+              locale: NS,
+              inject: (sessionId) => ({ sessionId }),
+            },
+            (props) => h(FreshHistoryDock, { ...props, ctx }),
+          ),
+        );
+
+        // Passive progress strip in the composer dock. It also reports the
+        // current identity Session to the auto-switch poll.
+        ctx.slots.inject('conversation.composer.dock', () =>
+          ctx.slots.register(
+            {
+              name: 'conversation.composer.dock',
+              id: 'personal-agent-progress',
+              order: 30,
+              locale: NS,
+              inject: (sessionId) => ({ sessionId }),
+            },
+            (props) => h(PersonalProgress, { ...props, ctx }),
           ),
         );
 
@@ -1912,6 +3565,75 @@ window.__ModuleLoader__.load({
             root = null;
           };
         }, 'personal-agent: identity module above workspaces');
+
+        // Follow a newly forked conversation automatically. The status
+        // component above reports which identity Session is on screen; when
+        // the Host state's newest Session for that identity changes and the
+        // current Session is idle, open the new one. The fork carries the full
+        // transcript, so history stays visible across the switch.
+        ctx.effect(() => {
+          let cancelled = false;
+          let polling = false;
+          const timer = setInterval(async () => {
+            if (cancelled || polling) return;
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            const focus = conversationFocus;
+            if (focus.identityId === null || focus.sessionId === null || focus.switching) return;
+            const sessions = ctx.get('sessions');
+            const current = sessions?.list.getSnapshot().byId[focus.sessionId];
+            if (current?.running === true) return;
+            polling = true;
+            try {
+              const result = await requestJson(STATE_URL);
+              if (!result.ok) return;
+              if (focus.historySessionId === focus.sessionId) return;
+              const identity = result.data?.identities?.find((item) => item.id === focus.identityId);
+              const fresh = identity?.freshSessionId;
+              if (typeof fresh !== 'string' || fresh === focus.sessionId) return;
+              const freshSummary = sessions?.list.getSnapshot().byId[fresh];
+              if (freshSummary?.origin === 'subagent') return;
+              const ui = ctx.get('uiWorkspace');
+              if (ui === undefined) return;
+              focus.switching = true;
+              console.debug(`personal-agent: auto-switching to fresh conversation ${fresh}`);
+              await ui.openSession(fresh);
+              focus.sessionId = fresh;
+              await store.load(true).catch(() => undefined);
+            } catch (error) {
+              console.warn('personal-agent: auto-switch failed:', messageOf(error));
+            } finally {
+              focus.switching = false;
+              polling = false;
+            }
+          }, 900);
+          return () => {
+            cancelled = true;
+            clearInterval(timer);
+          };
+        }, 'personal-agent: auto-switch to new conversations');
+
+        // Restore an open group feed after a page refresh. Clicking an identity
+        // clears the active group, so this never overrides an explicit choice.
+        ctx.effect(() => {
+          let opened = null;
+          const begin = () => {
+            const { state, activeGroupId } = store.snapshot();
+            if (state === null || activeGroupId === null) return;
+            const group = state.groups?.find((candidate) => candidate.mode === 'multi' && candidate.id === activeGroupId);
+            if (group === undefined) {
+              store.setActiveGroup(null);
+              return;
+            }
+            if (opened === activeGroupId) return;
+            const layout = ctx.get('layout');
+            if (layout === undefined) return;
+            opened = activeGroupId;
+            layout.selectPanel(GROUP_PANEL_ID);
+          };
+          const unsubscribe = store.subscribe(begin);
+          begin();
+          return unsubscribe;
+        }, 'personal-agent: restore group feed');
 
         // Enter the active identity's newest conversation automatically, so a
         // fresh page lands in the conversation instead of the blank New Session

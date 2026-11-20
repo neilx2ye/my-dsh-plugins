@@ -27,6 +27,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { mkdir, realpath, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -55,11 +56,31 @@ const REMOVE_PATH = '/api/personal-agent/identity/remove';
 const MEMORY_PATH = '/api/personal-agent/memory';
 /** Ensure one identity's home and return its newest conversation, if any. */
 const OPEN_PATH = '/api/personal-agent/open';
+/** Start a group conversation hosted by one identity with the others as guests. */
+const GROUP_PATH = '/api/personal-agent/group';
+/** Close a group and archive its host conversation. */
+const GROUP_REMOVE_PATH = '/api/personal-agent/group/remove';
+/** Rename one group. */
+const GROUP_RENAME_PATH = '/api/personal-agent/group/rename';
+/** Post one user message to a multi-agent group and fan it out. */
+const GROUP_SEND_PATH = '/api/personal-agent/group/send';
+/** Read a multi-agent group's transcript and participant status. */
+const GROUP_STATE_PATH = '/api/personal-agent/group/state';
+/** Acknowledge the fresh conversation auto-switch; clears the pending marker. */
+const FRESH_CONSUME_PATH = '/api/personal-agent/fresh/consume';
+/** Compact the forked transcript after a fresh-conversation switch. */
+const COMPACT_PATH = '/api/personal-agent/compact';
+/** Read a prior conversation's text for the display-only history block. */
+const TRANSCRIPT_PATH = '/api/personal-agent/transcript';
 
 /** Prompt section order just after the fixed Harness identity and before any preset persona. */
 const IDENTITY_SECTION_ORDER = -999;
 /** Memory renders after the tool guidance, before the deployment persona suffix. */
 const MEMORY_SECTION_ORDER = 10150;
+/** Group protocol sits after the identity and before memory. */
+const GROUP_SECTION_ORDER = -998;
+/** Subagent backend used for guest replies. */
+const SUBAGENT_PROVIDER = 'spawn';
 
 /** Name of the agent preset this bundle declares. */
 const PRESET_ID = 'personal';
@@ -348,6 +369,133 @@ function createMemoryStore(file, maxBytes) {
 }
 
 /**
+ * Compose the host protocol for one group conversation.
+ * @param host - host identity.
+ * @param guests - guest identities.
+ * @param name - group display name.
+ * @returns the prompt section text.
+ */
+function composeGroupSection(host, guests, name) {
+  const roster = guests
+    .map((guest) => `- ${guest.name} (id: ${guest.id}, role: ${guest.role || 'personal agent'})`)
+    .join('\n');
+  return [
+    `This conversation is a group chat (${name}). You are ${host.name}; you host ${guests.map((guest) => guest.name).join(', ')}.`,
+    '',
+    'Participants:',
+    roster,
+    '',
+    'The user writes to the group. For each user message:',
+    '1. Call `ask_identity` once for every guest, passing the user message and enough recent group context for the guest to reply. Never invent a guest reply and never answer on their behalf.',
+    '2. Present each guest reply under **their name**, then add your own reply as **' + host.name + '**. Keep your framing short; the participants are the voices.',
+    '3. When the user asks the participants to discuss, debate, or respond to each other, relay each participant’s latest reply into `ask_identity` for the others for the requested number of rounds, then stop and summarize. You are the moderator and may add a brief synthesis.',
+  ].join('\n');
+}
+
+/**
+ * Compose the per-participant protocol for a multi-agent group. There is no
+ * host or moderator: every participant receives the user's message and replies
+ * as itself.
+ * @param identity - the participant identity.
+ * @param participants - every participant identity.
+ * @param name - group display name.
+ * @returns the prompt section text.
+ */
+function composeParticipantSection(identity, participants, name) {
+  const others = participants.filter((participant) => participant.id !== identity.id);
+  return [
+    `This conversation is group chat "${name}". You are ${identity.name}; you are one of ${participants.length} participants, not a host or moderator.`,
+    `Other participants: ${others.map((participant) => participant.name).join(', ') || 'none'}.`,
+    'Every participant sees the user’s message. Reply as yourself, in your own voice, and do not speak for the other participants or invent their replies.',
+    'When the user mentions you directly, they especially want your answer; answer that request rather than summarizing the group.',
+  ].join('\n');
+}
+
+/**
+ * Build the model-facing `new_conversation` tool.
+ * @param recordFor - resolve the calling agent's identity record.
+ * @param createConversation - create a fresh conversation in that identity's home.
+ * @returns a tool definition accepted by `ctx.tools.register`.
+ */
+function buildNewConversationTool(recordFor, scheduleConversation) {
+  return {
+    name: 'new_conversation',
+    description:
+      'Start a fresh conversation after the current turn with an empty model context. The previous transcript stays visible in the new conversation as a display-only history block, but it is not sent to the model. Before switching, save anything durable the user wants to keep with the remember tool. The UI automatically switches to the new conversation; the user does not need to click anything. Use it when the user asks for a fresh start or the topic changes.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        reason: { type: 'string', description: 'Optional short reason for starting a fresh conversation.' },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          scheduled: { type: 'boolean' },
+          note: { type: 'string' },
+        },
+        required: ['scheduled', 'note'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.note }],
+    },
+    async execute(_args, exec) {
+      const record = recordFor(exec);
+      scheduleConversation(record, exec);
+      return {
+        scheduled: true,
+        note: `A new conversation with ${record.identity.name} will start after this turn with an empty model context. Its previous transcript stays visible as display-only history, and the old Session remains in the identity history. Save durable facts to long-term memory before switching if the user wants them kept.`,
+      };
+    },
+  };
+}
+
+/**
+ * Build the model-facing `ask_identity` tool for the host of a group chat.
+ * @param groupFor - resolve a group from the host Session id.
+ * @param ask - deliver one guest prompt and return its reply.
+ * @returns a tool definition.
+ */
+function buildAskIdentityTool(groupFor, ask) {
+  return {
+    name: 'ask_identity',
+    description:
+      'Ask one participant of this group conversation to reply. Pass their id (or exact name) and the message/context they should answer. Use it once for each guest on a normal user message; when the user wants the participants to discuss or respond to each other, pass the other participant’s latest reply as context and call again for each requested round. Never invent a guest reply.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        identity: { type: 'string', description: 'Guest participant id or exact name.' },
+        message: { type: 'string', description: 'What the guest should answer.' },
+        context: { type: 'string', description: 'Optional recent group exchange to include.' },
+      },
+      required: ['identity', 'message'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          identityId: { type: 'string' },
+          name: { type: 'string' },
+          text: { type: 'string' },
+        },
+        required: ['identityId', 'name', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: `**${value.name}**\n${value.text}` }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const group = groupFor(exec.agent?.session?.id, exec.agent);
+      if (group === undefined) throw new Error('personal-agent: ask_identity is only available in a group conversation');
+      return ask(group, args, exec);
+    },
+  };
+}
+
+/**
  * Register the identity model, tools, homes, and browser routes.
  * @param ctx - Host root Context.
  * @param rawConfig - Loader row configuration, validated by {@link Config}.
@@ -371,6 +519,233 @@ export function apply(ctx, rawConfig) {
       store: createMemoryStore(paths.memoryFile, settings.memory.maxBytes),
     };
   });
+
+  /**
+   * Group conversations. A legacy group is keyed by its host Session id and
+   * has a host plus guests. A multi-agent group is keyed by its own group id;
+   * it owns one Session per participant and has no host or moderator.
+   * @type {Map<string, object>}
+   */
+  const groupsFile = join(dataDir, 'groups.json');
+  const groups = new Map();
+  /** Participant Session id -> { group, identityId }. */
+  const participantSessions = new Map();
+  /** Return the stable key of a group record. */
+  const groupKey = (group) => (typeof group.id === 'string' ? group.id : group.sessionId);
+  /** Rebuild the participant-Session index from every multi-agent group. */
+  const indexParticipants = () => {
+    participantSessions.clear();
+    for (const group of groups.values()) {
+      if (!Array.isArray(group.participantIds)) continue;
+      for (const identityId of group.participantIds) {
+        const sessionId = group.sessions?.[identityId];
+        if (typeof sessionId === 'string') participantSessions.set(sessionId, { group, identityId });
+      }
+    }
+  };
+  try {
+    if (existsSync(groupsFile)) {
+      const parsed = JSON.parse(readFileSync(groupsFile, 'utf8'));
+      if (Array.isArray(parsed.groups)) {
+        for (const group of parsed.groups) {
+          if (group === null || typeof group !== 'object' || typeof group.name !== 'string') continue;
+          if (
+            typeof group.id === 'string' &&
+            Array.isArray(group.participantIds) &&
+            group.participantIds.every((id) => typeof id === 'string') &&
+            group.sessions !== null &&
+            typeof group.sessions === 'object'
+          ) {
+            const sessions = {};
+            for (const identityId of group.participantIds) {
+              if (typeof group.sessions[identityId] === 'string') sessions[identityId] = group.sessions[identityId];
+            }
+            groups.set(group.id, {
+              id: group.id,
+              name: group.name,
+              participantIds: [...group.participantIds],
+              sessions,
+              createdAt: typeof group.createdAt === 'string' ? group.createdAt : new Date().toISOString(),
+              ...(typeof group.workspaceId === 'string' ? { workspaceId: group.workspaceId } : {}),
+              ...(typeof group.home === 'string' ? { home: group.home } : {}),
+            });
+          } else if (typeof group.sessionId === 'string' && typeof group.hostId === 'string' && Array.isArray(group.guestIds)) {
+            groups.set(group.sessionId, {
+              sessionId: group.sessionId,
+              name: group.name,
+              hostId: group.hostId,
+              guestIds: group.guestIds.filter((id) => typeof id === 'string'),
+              createdAt: typeof group.createdAt === 'string' ? group.createdAt : new Date().toISOString(),
+              ...(typeof group.workspaceId === 'string' ? { workspaceId: group.workspaceId } : {}),
+              ...(typeof group.home === 'string' ? { home: group.home } : {}),
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    logger?.warn?.(`personal-agent: could not read groups: ${messageOf(error)}`);
+  }
+  indexParticipants();
+  /**
+   * Persist the current group registry atomically enough for this plugin.
+   * @returns when the file is written.
+   */
+  async function writeGroups() {
+    await mkdir(dirname(groupsFile), { recursive: true, mode: 0o700 });
+    await writeFile(groupsFile, `${JSON.stringify({ groups: [...groups.values()] }, null, 2)}\n`, { mode: 0o600 });
+  }
+
+  /**
+   * Transcript file for one group. Multi-agent groups persist their own feed;
+   * legacy groups use their host Session log.
+   * @param group - group record.
+   * @returns absolute file path.
+   */
+  function transcriptFile(group) {
+    return join(groupsRoot, groupKey(group), 'transcript.json');
+  }
+
+  /**
+   * Read one group transcript.
+   * @param group - group record.
+   * @returns messages oldest first.
+   */
+  function readTranscript(group) {
+    try {
+      if (!existsSync(transcriptFile(group))) return [];
+      const parsed = JSON.parse(readFileSync(transcriptFile(group), 'utf8'));
+      return Array.isArray(parsed.messages) ? parsed.messages.filter((message) => message !== null && typeof message === 'object') : [];
+    } catch (error) {
+      logger?.warn?.(`personal-agent: could not read group transcript: ${messageOf(error)}`);
+      return [];
+    }
+  }
+
+  /**
+   * Replace one group transcript, keeping the feed bounded.
+   * @param group - group record.
+   * @param messages - complete message list.
+   */
+  async function writeTranscript(group, messages) {
+    const bounded = messages.slice(-400);
+    const file = transcriptFile(group);
+    await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+    await writeFile(file, `${JSON.stringify({ version: 1, messages: bounded }, null, 2)}\n`, { mode: 0o600 });
+  }
+
+  /** Per-group write chains so parallel replies cannot overwrite each other. */
+  const transcriptChains = new Map();
+
+  /**
+   * Append one message to a group transcript, serialized per group.
+   * @param group - group record.
+   * @param message - { id, role, text, time, identityId?, name? }.
+   * @returns the appended message.
+   */
+  async function appendTranscript(group, message) {
+    const key = groupKey(group);
+    const previous = transcriptChains.get(key) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(async () => {
+      const messages = readTranscript(group);
+      messages.push(message);
+      await writeTranscript(group, messages);
+    });
+    transcriptChains.set(key, next);
+    try {
+      await next;
+    } finally {
+      if (transcriptChains.get(key) === next) transcriptChains.delete(key);
+    }
+    return message;
+  }
+
+  /** Sessions prompted for a multi-agent group, awaiting their turn end. */
+  const pendingReplies = new Map();
+
+  /**
+   * Extract the visible text of an assistant event.
+   * @param event - session event.
+   * @returns joined text.
+   */
+  function assistantText(event) {
+    const content = event?.data?.message?.content;
+    if (!Array.isArray(content)) return '';
+    return content
+      .filter((block) => block !== null && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('\n')
+      .trim();
+  }
+
+  // A participant agent answers in its own Session. When that turn ends, copy
+  // its final visible answer into the group feed. The plugin, not another
+  // agent, is the relay, so no identity speaks for the others.
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'turn/end') return;
+    const queue = pendingReplies.get(session.id);
+    if (queue === undefined || queue.length === 0) return;
+    const pending = queue.shift();
+    if (queue.length === 0) pendingReplies.delete(session.id);
+    const group = groups.get(pending.groupId);
+    if (group === undefined) return;
+    const identity = records.find((record) => record.identity.id === pending.identityId)?.identity;
+    if (identity === undefined) return;
+    const answered = [...session.log].reverse().find((candidate) => candidate.type === 'assistant/message' && candidate.seq >= pending.startSeq);
+    const text = assistantText(answered);
+    if (text === '') return;
+    void appendTranscript(group, {
+      id: `message-${randomUUID()}`,
+      role: 'assistant',
+      identityId: identity.id,
+      name: identity.name,
+      text,
+      time: new Date().toISOString(),
+    }).catch((error) => logger?.warn?.(`personal-agent: could not append a group reply: ${messageOf(error)}`));
+  });
+
+  /**
+   * Fresh-conversation markers: identity id -> pending blank Session id. The
+   * new_conversation tool creates the blank Session after the turn; the client
+   * auto-switches to it, then consumes the marker.
+   * @type {Map<string, string>}
+   */
+  const freshFile = join(dataDir, 'fresh.json');
+  const freshSessions = new Map();
+  /** Source conversation shown as display-only history for each fresh Session. */
+  const freshSources = new Map();
+  try {
+    if (existsSync(freshFile)) {
+      const parsed = JSON.parse(readFileSync(freshFile, 'utf8'));
+      if (parsed !== null && typeof parsed === 'object' && parsed.identities !== null && typeof parsed.identities === 'object') {
+        for (const [identityId, value] of Object.entries(parsed.identities)) {
+          const sessionId = typeof value === 'string' ? value : value?.sessionId;
+          if (typeof identityId === 'string' && typeof sessionId === 'string') freshSessions.set(identityId, sessionId);
+          const from = typeof value === 'object' && value !== null && typeof value.from === 'string' ? value.from : null;
+          if (typeof identityId === 'string' && typeof from === 'string') freshSources.set(identityId, from);
+        }
+      }
+      if (parsed !== null && typeof parsed === 'object' && parsed.sources !== null && typeof parsed.sources === 'object') {
+        for (const [identityId, from] of Object.entries(parsed.sources)) {
+          if (typeof identityId === 'string' && typeof from === 'string') freshSources.set(identityId, from);
+        }
+      }
+    }
+  } catch (error) {
+    logger?.warn?.(`personal-agent: could not read fresh conversations: ${messageOf(error)}`);
+  }
+  /**
+   * Persist the pending fresh-conversation markers.
+   * @returns when the file is written.
+   */
+  async function writeFresh() {
+    await mkdir(dirname(freshFile), { recursive: true, mode: 0o700 });
+    const identities = {};
+    for (const [identityId, sessionId] of freshSessions) {
+      identities[identityId] = { sessionId, from: freshSources.get(identityId) ?? null };
+    }
+    await writeFile(freshFile, `${JSON.stringify({ identities, sources: Object.fromEntries(freshSources) }, null, 2)}\n`, { mode: 0o600 });
+  }
 
   // Two identities must not share a home or a memory file: both would fight
   // over one workspace and one set of notes.
@@ -453,6 +828,53 @@ export function apply(ctx, rawConfig) {
     return session?.header?.cwd;
   }
 
+  /** Root that holds every group home; a Session under it is group-scoped. */
+  const groupsRoot = join(dataDir, 'groups');
+
+  /**
+   * Test whether one path is a root or lives under it.
+   * @param root - absolute directory.
+   * @param candidate - absolute path.
+   * @returns whether candidate is inside root.
+   */
+  function inside(root, candidate) {
+    return candidate === root || candidate.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+  }
+
+  /**
+   * Find the group that owns a working directory. New groups have a home under
+   * `groups/`; matching by directory keeps a group recognised even when its
+   * registry row is out of date, so a guest turn can never be mistaken for a
+   * private identity conversation.
+   * @param cwd - effective working directory.
+   * @returns the group or undefined.
+   */
+  function groupForCwd(cwd) {
+    if (typeof cwd !== 'string' || cwd === '') return undefined;
+    for (const group of groups.values()) {
+      const home = typeof group.home === 'string' && group.home !== '' ? group.home : join(groupsRoot, groupKey(group), 'home');
+      if (inside(home, cwd)) return group;
+    }
+    return undefined;
+  }
+
+  /**
+   * Resolve the group for one Agent, by Session id and then by its working
+   * directory. The registry can lag behind a renamed or re-created Session;
+   * the directory is the durable half of the group's identity.
+   * @param agent - live agent.
+   * @param source - context that may provide `workingDirectory`.
+   * @returns the group or undefined.
+   */
+  function groupForAgent(agent, source) {
+    if (agent === undefined) return undefined;
+    const participant = participantSessions.get(agent.session.id);
+    if (participant !== undefined) return participant.group;
+    const registered = groups.get(agent.session.id);
+    if (registered !== undefined) return registered;
+    return groupForCwd(cwdOf(agent.session, source));
+  }
+
   /**
    * Resolve the identity for one Agent.
    * @param agent - live agent.
@@ -461,6 +883,12 @@ export function apply(ctx, rawConfig) {
    */
   function recordForAgent(agent, source) {
     if (agent === undefined) return undefined;
+    const participant = participantSessions.get(agent.session.id);
+    if (participant !== undefined) return records.find((record) => record.identity.id === participant.identityId);
+    const group = groupForAgent(agent, source);
+    if (group !== undefined && typeof group.hostId === 'string') {
+      return records.find((record) => record.identity.id === group.hostId);
+    }
     return recordForCwd(cwdOf(agent.session, source));
   }
 
@@ -504,6 +932,30 @@ export function apply(ctx, rawConfig) {
             order: MEMORY_SECTION_ORDER,
             text: () => (settings.memory.includeInPrompt ? composeMemorySection(record.identity, record.store.read()) : ''),
           });
+          const group = groupForAgent(agent, scope);
+          if (group !== undefined && Array.isArray(group.participantIds)) {
+            const participants = group.participantIds
+              .map((id) => records.find((candidate) => candidate.identity.id === id)?.identity)
+              .filter((participant) => participant !== undefined);
+            if (participants.length > 0) {
+              scoped.systemPrompt.section({
+                name: 'personal-agent:group',
+                order: GROUP_SECTION_ORDER,
+                text: () => composeParticipantSection(record.identity, participants, group.name),
+              });
+            }
+          } else if (group !== undefined && group.hostId === record.identity.id) {
+            const guests = group.guestIds
+              .map((id) => records.find((candidate) => candidate.identity.id === id)?.identity)
+              .filter((guest) => guest !== undefined);
+            if (guests.length > 0) {
+              scoped.systemPrompt.section({
+                name: 'personal-agent:group',
+                order: GROUP_SECTION_ORDER,
+                text: () => composeGroupSection(record.identity, guests, group.name),
+              });
+            }
+          }
         });
         installs.set(agent, fiber);
       } catch (error) {
@@ -530,10 +982,165 @@ export function apply(ctx, rawConfig) {
     );
   });
 
+  /**
+   * Sessions waiting for their current turn to finish before being forked into
+   * a new conversation. The tool schedules; the Host forks at turn end so the
+   * new session includes the turn's final assistant message and tool result.
+   */
+  const pendingConversations = new Map();
+  let turnListenerInstalled = false;
+
+  /**
+   * Register a post-turn fork for the calling Session.
+   * @param record - calling identity.
+   * @param exec - tool execution context.
+   */
+  function scheduleConversation(record, exec) {
+    const sourceSessionId = exec.agent?.session?.id;
+    if (typeof sourceSessionId !== 'string') throw new Error('personal-agent: no current Session to fork');
+    pendingConversations.set(sourceSessionId, { identityId: record.identity.id });
+    if (!turnListenerInstalled) {
+      turnListenerInstalled = true;
+      ctx.on('session/event', (session, event) => {
+        if (event.type !== 'turn/end') return;
+        const pending = pendingConversations.get(session.id);
+        if (pending === undefined) return;
+        pendingConversations.delete(session.id);
+        void finalizeConversation(session.id, pending).catch((error) => {
+          logger?.warn?.(`personal-agent: could not fork a new conversation: ${messageOf(error)}`);
+        });
+      });
+    }
+  }
+
+  /**
+   * Fork a completed Session into a new conversation and attach it to the
+   * identity workspace. The fork keeps every event, so the user sees the same
+   * transcript; the identity module and auto-switch open the newest one.
+   * @param sourceSessionId - Session whose turn just ended.
+   * @param pending.identityId - owning identity.
+   */
+  async function finalizeConversation(sourceSessionId, pending) {
+    const source = ctx.get('sessions')?.get?.(sourceSessionId);
+    if (groups.has(sourceSessionId) || groupForCwd(source?.header?.cwd) !== undefined) {
+      logger?.warn?.('personal-agent: refused to start a private fresh conversation from a group session');
+      return;
+    }
+    const controller = ctx.get('sessionController');
+    if (controller === undefined) throw new Error('personal-agent: session controller is unavailable');
+    const registry = await registryWithin(2000);
+    if (registry === undefined) throw new Error('personal-agent: workspace registry is unavailable');
+    const workspace = await ensureIdentity(pending.identityId, registry);
+    const sessionId = `session-${randomUUID()}`;
+    await controller.create({ sessionId, workspaceId: workspace.id, agentPreset: PRESET_ID });
+    freshSessions.set(pending.identityId, sessionId);
+    freshSources.set(pending.identityId, sourceSessionId);
+    await writeFresh();
+    logger?.info?.(`personal-agent: fresh display-only conversation ${sessionId} after ${sourceSessionId}`);
+  }
+
+  ctx.effect(
+    () => () => {
+      pendingConversations.clear();
+    },
+    'personal-agent: pending conversations',
+  );
+
+  /**
+   * Ask one group guest for a reply by spawning a one-shot child in the guest's
+   * home. The child receives the guest's normal identity prompt and memory; its
+   * final answer is returned to the host, which presents it in the group.
+   * @param group - resolved group record.
+   * @param guest - guest identity record.
+   * @param args - tool arguments.
+   * @param exec - tool execution context.
+   * @returns the guest's reply.
+   */
+  async function askGuest(group, guest, args, exec) {
+    const subagents = ctx.get('subagents');
+    const provider = subagents?.getProvider?.(SUBAGENT_PROVIDER);
+    if (subagents === undefined || provider === undefined) {
+      throw new Error('personal-agent: no subagent provider is available for group guests');
+    }
+    const host = records.find((record) => record.identity.id === group.hostId)?.identity;
+    const message = typeof args.message === 'string' ? args.message.trim() : '';
+    if (message === '') throw new Error('personal-agent: ask_identity needs a non-empty message');
+    const context = typeof args.context === 'string' ? args.context.trim() : '';
+    const prompt = [
+      `You are ${guest.identity.name} (${guest.identity.role || 'personal agent'}) in a group conversation hosted by ${host?.name ?? 'the host'}.`,
+      `Group: ${group.name}.`,
+      context === '' ? '' : `Recent group context:\n${context.slice(0, 12000)}`,
+      `The group is discussing:\n${message.slice(0, 12000)}`,
+      `Reply as ${guest.identity.name} only, in your own voice and briefly. Do not speak for the host or other participants.`,
+    ]
+      .filter((line) => line !== '')
+      .join('\n\n');
+    const activation = await subagents.startActivation({
+      provider: provider.name,
+      label: `${guest.identity.name} · ${group.name}`,
+      request: {
+        cwd: guest.paths.home,
+        agentPreset: PRESET_ID,
+        prompt: [{ type: 'text', text: prompt }],
+        parent: exec.agent,
+        signal: exec.signal,
+      },
+      signal: exec.signal,
+      delivery: 'caller',
+    });
+    try {
+      const result = await activation.result;
+      const output = result.output
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n')
+        .trim();
+      const text = output !== ''
+        ? output
+        : `${guest.identity.name} did not produce a reply (${result.stopReason}${result.diagnostic === undefined ? '' : `: ${result.diagnostic}`}).`;
+      return { identityId: guest.identity.id, name: guest.identity.name, text };
+    } finally {
+      await activation.dispose().catch((error) => logger?.warn?.(`personal-agent: guest cleanup failed: ${messageOf(error)}`));
+    }
+  }
+
+  /**
+   * Validate the requested guest and ask that identity.
+   * @param group - group record.
+   * @param args - tool arguments.
+   * @param exec - tool execution context.
+   * @returns the guest reply.
+   */
+  async function askGroupGuest(group, args, exec) {
+    const guest = records.find(
+      (record) =>
+        group.guestIds.includes(record.identity.id) &&
+        (record.identity.id === args.identity || record.identity.name === args.identity),
+    );
+    if (guest === undefined) {
+      throw new Error(`personal-agent: "${args.identity}" is not a guest in this group`);
+    }
+    return askGuest(group, guest, args, exec);
+  }
+
   ctx.inject(['tools'], (scope) => {
-    const when = ({ agent }) => recordForAgent(agent, ctx) !== undefined;
-    scope.tools.register(buildRememberTool(recordForExec), { when });
-    scope.tools.register(buildRecallTool(recordForExec), { when });
+    const whenIdentity = ({ agent }) => recordForAgent(agent, ctx) !== undefined;
+    // Only a legacy host-and-guests group uses the moderator tool. A
+    // multi-agent group has no host, so no participant may speak for another.
+    const whenGroupHost = ({ agent }) => {
+      const group = groupForAgent(agent, ctx);
+      return group !== undefined && typeof group.hostId === 'string' && !participantSessions.has(agent.session.id);
+    };
+    scope.tools.register(buildRememberTool(recordForExec), { when: whenIdentity });
+    scope.tools.register(buildRecallTool(recordForExec), { when: whenIdentity });
+    scope.tools.register(buildNewConversationTool(recordForExec, scheduleConversation), {
+      when: ({ agent }) =>
+        whenIdentity({ agent }) && agent.session.origin !== 'subagent' && groupForAgent(agent, ctx) === undefined,
+    });
+    scope.tools.register(
+      buildAskIdentityTool((sessionId, agent) => groups.get(sessionId) ?? groupForAgent(agent, ctx), askGroupGuest),
+      { when: whenGroupHost },
+    );
   });
 
   // ── one home workspace per identity ──────────────────────────────────────
@@ -603,6 +1210,61 @@ export function apply(ctx, rawConfig) {
   }
 
   /**
+   * Give one group its own hidden home and workspace. New groups create these
+   * up front; this also repairs a group created before groups owned a home,
+   * whose Session otherwise sits in the host identity's workspace and can be
+   * mistaken for a private conversation.
+   * @param group - group record.
+   * @param registry - Host workspace registry.
+   * @returns whether the record changed.
+   */
+  async function ensureGroupWorkspace(group, registry) {
+    const home = typeof group.home === 'string' && group.home !== ''
+      ? group.home
+      : join(groupsRoot, groupKey(group), 'home');
+    await mkdir(home, { recursive: true, mode: 0o700 });
+    const canonical = await realpath(home);
+    let entity = registry.list().find((workspace) => workspace.path === canonical);
+    if (entity === undefined) entity = await registry.create(canonical, group.name);
+    else if (entity.title !== group.name) await entity.setTitle(group.name).catch(() => undefined);
+    // A legacy group Session created before groups owned a home is a member
+    // of the host identity's workspace. Detach it: the group row opens it by
+    // Session id, while the identity's private conversation selection must
+    // never see it again. A multi-agent group has no single host Session.
+    const hosted = typeof group.sessionId === 'string' ? group.sessionId : undefined;
+    for (const workspace of registry.list()) {
+      if (workspace.path === canonical || hosted === undefined || !workspace.sessionIds.includes(hosted)) continue;
+      try {
+        await workspace.detachSession(hosted);
+      } catch (error) {
+        logger?.warn?.(`personal-agent: could not detach group ${hosted} from ${workspace.title}: ${messageOf(error)}`);
+      }
+    }
+    if (group.home !== canonical || group.workspaceId !== entity.id) {
+      group.home = canonical;
+      group.workspaceId = entity.id;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Ensure every group home exists and is registered, then persist repairs.
+   * @param registry - Host workspace registry.
+   */
+  async function ensureGroups(registry) {
+    let changed = false;
+    for (const group of groups.values()) {
+      try {
+        if (await ensureGroupWorkspace(group, registry)) changed = true;
+      } catch (error) {
+        logger?.warn?.(`personal-agent: could not prepare group home ${group.sessionId}: ${messageOf(error)}`);
+      }
+    }
+    if (changed) await writeGroups().catch((error) => logger?.warn?.(`personal-agent: could not save groups: ${messageOf(error)}`));
+  }
+
+  /**
    * Keep identity workspaces after the profile's project workspaces, so
    * installing identities does not reorder the user's existing project list.
    * The shipped browser renders the registry order; identity groups belong at
@@ -624,6 +1286,43 @@ export function apply(ctx, rawConfig) {
         await registry.insertBefore(entities[misplaced].id);
       } catch {
         return;
+      }
+    }
+  }
+
+  /**
+   * Remove identity and group workspaces that no longer belong to this config.
+   * A removed identity must not fall through to the project list as an
+   * ordinary workspace. Its Sessions are archived first, then the registration
+   * is deleted; the transcript and the moved identity data stay recoverable.
+   * @param registry - Host workspace registry.
+   */
+  async function cleanupOrphanWorkspaces(registry) {
+    const identitiesRoot = join(dataDir, 'identities');
+    const activeHomes = new Set(records.map((record) => record.canonicalHome));
+    const groupHomes = new Set();
+    for (const group of groups.values()) {
+      const home = typeof group.home === 'string' && group.home !== ''
+        ? group.home
+        : join(groupsRoot, group.sessionId, 'home');
+      groupHomes.add(home);
+    }
+    for (const workspace of registry.list()) {
+      const identityOrphan = inside(identitiesRoot, workspace.path) && !activeHomes.has(workspace.path);
+      const groupOrphan = inside(groupsRoot, workspace.path) && !groupHomes.has(workspace.path);
+      if (!identityOrphan && !groupOrphan) continue;
+      for (const sessionId of workspace.sessionIds) {
+        try {
+          await registry.archiveSession(sessionId, { stopActivity: true });
+        } catch (error) {
+          logger?.warn?.(`personal-agent: could not archive orphan session ${sessionId}: ${messageOf(error)}`);
+        }
+      }
+      try {
+        await registry.delete(workspace.id);
+        logger?.info?.(`personal-agent: removed orphan workspace ${workspace.title}`);
+      } catch (error) {
+        logger?.warn?.(`personal-agent: could not remove orphan workspace ${workspace.title}: ${messageOf(error)}`);
       }
     }
   }
@@ -675,12 +1374,36 @@ export function apply(ctx, rawConfig) {
   /** Latest registry, used by the project list in the browser payload. */
   let registryRef;
 
+  /** Context-compaction service, injected so the fresh-conversation route can use it. */
+  let compactionRef;
+
+  ctx.inject(['compaction'], (scope) => {
+    compactionRef = scope.compaction;
+    return () => {
+      if (compactionRef === scope.compaction) compactionRef = undefined;
+    };
+  });
+
+  /** Human-command runtime; /compact is scoped to the personal Agent preset. */
+  let commandsRef;
+
+  ctx.inject(['commands'], (scope) => {
+    commandsRef = scope.commands;
+    return () => {
+      if (commandsRef === scope.commands) commandsRef = undefined;
+    };
+  });
+
   ctx.inject(['workspaceRegistry'], (scope) => {
     registryRef = scope.workspaceRegistry;
     provideRegistry(scope.workspaceRegistry);
-    void ensureAll(scope.workspaceRegistry).then(() => reconcileIdentityOrder(scope.workspaceRegistry)).catch((error) => {
-      logger?.warn?.(`personal-agent: could not order identity workspaces: ${messageOf(error)}`);
-    });
+    void cleanupOrphanWorkspaces(scope.workspaceRegistry)
+      .then(() => ensureGroups(scope.workspaceRegistry))
+      .then(() => ensureAll(scope.workspaceRegistry))
+      .then(() => reconcileIdentityOrder(scope.workspaceRegistry))
+      .catch((error) => {
+        logger?.warn?.(`personal-agent: could not prepare identity and group workspaces: ${messageOf(error)}`);
+      });
   });
 
   // ── browser routes ───────────────────────────────────────────────────────
@@ -696,6 +1419,9 @@ export function apply(ctx, rawConfig) {
       const registry = registryRef;
       if (registry === undefined) return [];
       const owned = new Set(records.map((record) => record.canonicalHome));
+      for (const group of groups.values()) {
+        if (typeof group.home === 'string') owned.add(group.home);
+      }
       const archived = new Set(registry.archivedSessionIds);
       return registry
         .list()
@@ -720,9 +1446,56 @@ export function apply(ctx, rawConfig) {
         preset: PRESET_ID,
         autoOpen: settings.autoOpen,
         projects: listProjects(),
+        groups: [...groups.values()]
+          .map((group) => {
+            if (Array.isArray(group.participantIds)) {
+              const participants = group.participantIds
+                .map((id) => records.find((record) => record.identity.id === id)?.identity)
+                .filter((participant) => participant !== undefined)
+                .map((participant) => ({
+                  id: participant.id,
+                  name: participant.name,
+                  role: participant.role,
+                  accent: participant.accent,
+                  avatar: participant.avatar,
+                }));
+              if (participants.length === 0) return null;
+              return {
+                id: group.id,
+                name: group.name,
+                mode: 'multi',
+                participants,
+                ...(typeof group.workspaceId === 'string' ? { workspaceId: group.workspaceId } : {}),
+                createdAt: group.createdAt,
+              };
+            }
+            const host = records.find((record) => record.identity.id === group.hostId)?.identity;
+            const guests = group.guestIds
+              .map((id) => records.find((record) => record.identity.id === id)?.identity)
+              .filter((guest) => guest !== undefined)
+              .map((guest) => ({ id: guest.id, name: guest.name, role: guest.role }));
+            if (host === undefined || guests.length === 0) return null;
+            return {
+              sessionId: group.sessionId,
+              name: group.name,
+              mode: 'legacy',
+              host: { id: host.id, name: host.name, role: host.role },
+              guests,
+              ...(typeof group.workspaceId === 'string' ? { workspaceId: group.workspaceId } : {}),
+              createdAt: group.createdAt,
+            };
+          })
+          .filter((group) => group !== null),
         identities: records.map((record) => {
           const info = homesInfo.get(record.identity.id);
           const identity = record.identity;
+          const registry = registryRef;
+          const archived = new Set(registry?.archivedSessionIds ?? []);
+          const workspace = registry?.list().find((candidate) => candidate.id === info?.workspaceId);
+          const latestSessionId = workspace?.sessionIds.find((id) => !archived.has(id) && !groups.has(id)) ?? null;
+          const fresh = freshSessions.get(identity.id);
+          const freshSessionId = typeof fresh === 'string' && workspace?.sessionIds.includes(fresh) && !archived.has(fresh) ? fresh : null;
+          const historySessionId = freshSessionId === null ? null : freshSources.get(identity.id) ?? null;
           return {
             id: identity.id,
             name: identity.name,
@@ -738,6 +1511,9 @@ export function apply(ctx, rawConfig) {
               exists: existsSync(record.paths.home),
               error: info?.error ?? null,
             },
+            latestSessionId,
+            freshSessionId,
+            historySessionId,
             memory: {
               path: record.paths.memoryFile,
               text: record.store.read(),
@@ -751,7 +1527,7 @@ export function apply(ctx, rawConfig) {
           includeInPrompt: settings.memory.includeInPrompt,
           maxBytes: settings.memory.maxBytes,
         },
-        tools: ['remember', 'recall'],
+        tools: ['remember', 'recall', 'new_conversation', 'ask_identity'],
         editable: ctx.get('configEditor') !== undefined && ctx.fiber?.entry !== undefined,
       };
     }
@@ -765,6 +1541,7 @@ export function apply(ctx, rawConfig) {
           fetch: async () => {
             const registry = await registryWithin(1500);
             if (registry !== undefined) {
+              await ensureGroups(registry);
               for (const record of records) {
                 const info = homesInfo.get(record.identity.id);
                 if (info?.workspaceId === undefined) {
@@ -905,6 +1682,8 @@ export function apply(ctx, rawConfig) {
 
             states.delete(identityId);
             await writeState(stateFile, states, logger);
+            if (freshSessions.delete(identityId)) await writeFresh();
+            freshSources.delete(identityId);
 
             const nextIdentities = settings.identities.filter((identity) => identity.id !== identityId);
             try {
@@ -969,6 +1748,639 @@ export function apply(ctx, rawConfig) {
       'personal-agent: memory route',
     );
 
+    /**
+     * Pick a workspace's newest real conversation, skipping blank Sessions the
+     * shipped New Session hero may have created in the background. Blank
+     * Sessions are still used when they are the only candidates.
+     * @param workspace - workspace entity.
+     * @param registry - workspace registry.
+     * @returns a Session id or null.
+     */
+    async function newestConversation(workspace, registry) {
+      const archived = new Set(registry.archivedSessionIds);
+      const candidates = workspace.sessionIds.filter((id) => !archived.has(id) && !groups.has(id));
+      if (candidates.length === 0) return null;
+      const controller = ctx.get('sessionController');
+      if (controller !== undefined && typeof controller.list === 'function') {
+        try {
+          const list = await controller.list({}, AbortSignal.timeout(1500));
+          const byId = new Map(list.items.map((item) => [item.id, item]));
+          // Only a private, human-owned conversation can be an identity's
+          // newest conversation. A group Session, a subagent turn, and a guest
+          // child all live in the same storage and must never be opened here.
+          const usable = candidates.filter((id) => {
+            const summary = byId.get(id);
+            if (summary === undefined) return true;
+            if (summary.origin === 'subagent' || summary.parentSessionId !== undefined) return false;
+            return !inside(groupsRoot, summary.cwd ?? '');
+          });
+          const nonBlank = usable.find((id) => byId.get(id)?.blank === false);
+          if (nonBlank !== undefined) return nonBlank;
+          if (usable.length > 0) return usable[0];
+          return null;
+        } catch {
+          // A list failure falls back to the registry order.
+        }
+      }
+      return candidates[0];
+    }
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: GROUP_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const participantIds = Array.isArray(body.participantIds)
+              ? [...new Set(body.participantIds.filter((id) => typeof id === 'string' && id !== ''))]
+              : [];
+            const controller = ctx.get('sessionController');
+            if (controller === undefined) return failure(409, 'session-controller-unavailable', 'this Host cannot create a group session');
+            const registry = await registryWithin(2000);
+            if (registry === undefined) return failure(409, 'workspace-unavailable', 'this Host has no workspace registry');
+            const requestedName = typeof body.name === 'string' && body.name.trim() !== '' ? body.name.trim().slice(0, 120) : '';
+
+            // Multi-agent group: one independent Session per identity, no host.
+            if (participantIds.length > 0) {
+              if (participantIds.length < 2) return failure(400, 'too-few-participants', 'a group needs at least two identities');
+              if (participantIds.length > 4) return failure(400, 'too-many-participants', 'a group supports at most four identities');
+              const participants = participantIds.map((id) => records.find((record) => record.identity.id === id));
+              if (participants.some((participant) => participant === undefined)) {
+                return failure(404, 'unknown-participant', 'one or more participant identities do not exist');
+              }
+              const name = requestedName !== '' ? requestedName : participants.map((participant) => participant.identity.name).join(' + ');
+              const groupId = `group-${randomUUID()}`;
+              const groupHome = join(dataDir, 'groups', groupId, 'home');
+              let groupWorkspace;
+              try {
+                await mkdir(groupHome, { recursive: true, mode: 0o700 });
+                const canonical = await realpath(groupHome);
+                groupWorkspace = registry.list().find((candidate) => candidate.path === canonical);
+                if (groupWorkspace === undefined) groupWorkspace = await registry.create(canonical, name);
+                else if (groupWorkspace.title !== name) await groupWorkspace.setTitle(name).catch(() => undefined);
+              } catch (error) {
+                return failure(500, 'group-workspace-failed', messageOf(error));
+              }
+              const sessions = {};
+              for (const identityId of participantIds) sessions[identityId] = `session-${randomUUID()}`;
+              const record = {
+                id: groupId,
+                name,
+                participantIds,
+                sessions,
+                createdAt: new Date().toISOString(),
+                workspaceId: groupWorkspace.id,
+                home: groupWorkspace.path,
+              };
+              // Index the participants before the Agents are created: the
+              // identity prompt is installed on agent/created and needs to know
+              // that this Session belongs to this identity.
+              groups.set(groupId, record);
+              indexParticipants();
+              const createdIds = [];
+              try {
+                for (const identityId of participantIds) {
+                  const created = await controller.create({ sessionId: sessions[identityId], workspaceId: groupWorkspace.id, agentPreset: PRESET_ID });
+                  createdIds.push(created.sessionId);
+                  if (created.sessionId !== sessions[identityId]) {
+                    sessions[identityId] = created.sessionId;
+                    indexParticipants();
+                  }
+                }
+                await writeGroups();
+                await writeTranscript(record, []);
+              } catch (error) {
+                for (const sessionId of createdIds) {
+                  await registry.archiveSession(sessionId, { stopActivity: true }).catch(() => undefined);
+                }
+                await registry.delete(groupWorkspace.id).catch(() => undefined);
+                groups.delete(groupId);
+                indexParticipants();
+                return failure(500, 'group-create-failed', messageOf(error));
+              }
+              return json({ ok: true, groupId, name, sessionIds: sessions });
+            }
+
+            // Legacy host-and-guests group: kept only so an existing group
+            // still opens after the upgrade. New groups use the multi shape.
+            const hostId = typeof body.hostId === 'string' ? body.hostId : '';
+            const guestIds = Array.isArray(body.guestIds)
+              ? body.guestIds.filter((id) => typeof id === 'string' && id !== hostId)
+              : [];
+            const uniqueGuests = [...new Set(guestIds)];
+            const host = records.find((record) => record.identity.id === hostId);
+            if (host === undefined) return failure(404, 'unknown-host', `no identity "${hostId}"`);
+            if (uniqueGuests.length === 0) return failure(400, 'no-guests', 'a group needs at least one guest identity');
+            if (uniqueGuests.length > 3) return failure(400, 'too-many-guests', 'a group supports at most three guests');
+            const guests = uniqueGuests.map((id) => records.find((record) => record.identity.id === id));
+            if (guests.some((guest) => guest === undefined)) {
+              return failure(404, 'unknown-guest', 'one or more guest identities do not exist');
+            }
+            const name = requestedName !== '' ? requestedName : [host.identity.name, ...guests.map((guest) => guest.identity.name)].join(' + ');
+            const sessionId = `session-${randomUUID()}`;
+            const groupHome = join(dataDir, 'groups', sessionId, 'home');
+            let groupWorkspace;
+            try {
+              await mkdir(groupHome, { recursive: true, mode: 0o700 });
+              const canonical = await realpath(groupHome);
+              groupWorkspace = registry.list().find((candidate) => candidate.path === canonical);
+              if (groupWorkspace === undefined) groupWorkspace = await registry.create(canonical, name);
+              else if (groupWorkspace.title !== name) await groupWorkspace.setTitle(name).catch(() => undefined);
+            } catch (error) {
+              return failure(500, 'group-workspace-failed', messageOf(error));
+            }
+            const record = {
+              sessionId,
+              name,
+              hostId,
+              guestIds: guests.map((guest) => guest.identity.id),
+              createdAt: new Date().toISOString(),
+              workspaceId: groupWorkspace.id,
+              home: groupWorkspace.path,
+            };
+            groups.set(sessionId, record);
+            try {
+              await writeGroups();
+              const created = await controller.create({ sessionId, workspaceId: groupWorkspace.id, agentPreset: PRESET_ID });
+              if (created.sessionId !== sessionId) {
+                groups.delete(sessionId);
+                record.sessionId = created.sessionId;
+                groups.set(created.sessionId, record);
+                await writeGroups();
+              }
+              try {
+                await controller.rename({ sessionId: record.sessionId, title: name });
+              } catch {
+                // The group name still lives in the module; a title rename is cosmetic.
+              }
+              return json({ ok: true, sessionId: record.sessionId, name });
+            } catch (error) {
+              groups.delete(sessionId);
+              await writeGroups().catch(() => undefined);
+              return failure(500, 'group-create-failed', messageOf(error));
+            }
+          },
+        }),
+      'personal-agent: group route',
+    );
+
+    /**
+     * Resolve which participants a user message addresses. A message without
+     * an @mention goes to every participant; a message with one or more
+     * mentions goes only to them.
+     * @param group - multi-agent group.
+     * @param text - user message.
+     * @param explicit - optional identity ids or names from the client.
+     * @returns addressed identity ids.
+     */
+    function addressedParticipants(group, text, explicit) {
+      const participants = group.participantIds
+        .map((id) => records.find((record) => record.identity.id === id)?.identity)
+        .filter((identity) => identity !== undefined);
+      const found = new Set();
+      for (const identity of participants) {
+        if (text.includes(`@${identity.name}`)) found.add(identity.id);
+        if (text.includes(`@${identity.id}`)) found.add(identity.id);
+      }
+      if (Array.isArray(explicit)) {
+        for (const value of explicit) {
+          if (typeof value !== 'string') continue;
+          const identity = participants.find((candidate) => candidate.id === value || candidate.name === value);
+          if (identity !== undefined) found.add(identity.id);
+        }
+      }
+      return found.size > 0 ? [...found] : [...group.participantIds];
+    }
+
+    /**
+     * Build one participant's prompt from the user message and the group feed.
+     * @param group - multi-agent group.
+     * @param identity - addressed identity.
+     * @param text - user message.
+     * @param history - messages before this user message.
+     * @param addressed - whether the user named this identity.
+     * @returns prompt text.
+     */
+    function participantPrompt(group, identity, text, history, addressed) {
+      const participants = group.participantIds
+        .map((id) => records.find((record) => record.identity.id === id)?.identity)
+        .filter((participant) => participant !== undefined);
+      const transcript = history
+        .slice(-40)
+        .map((message) => (message.role === 'user' ? `用户：${message.text}` : `${message.name ?? '参与者'}：${message.text}`))
+        .join('\n')
+        .slice(-20000);
+      return [
+        `你正在参加群聊「${group.name}」。参与者：${participants.map((participant) => participant.name).join('、')}。`,
+        `你是 ${identity.name}。这是一次群聊，没有主持或主智能体；每位参与者看到用户消息后各自回复。只代表你自己，不要替其他人说话。`,
+        addressed ? `用户在这条消息里点名了你，请优先回答用户要你做的事。` : '',
+        transcript === '' ? '' : `最近的群聊记录：\n${transcript}`,
+        `用户刚刚说：\n${text}`,
+        `请以 ${identity.name} 的身份，直接回复群聊。保持简洁，不要写“作为群成员”之类的元叙述。`,
+      ]
+        .filter((line) => line !== '')
+        .join('\n\n');
+    }
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: GROUP_STATE_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const groupId = typeof body.groupId === 'string' ? body.groupId : '';
+            const group = groups.get(groupId);
+            if (group === undefined || !Array.isArray(group.participantIds)) {
+              return failure(404, 'unknown-group', `no multi-agent group "${groupId}"`);
+            }
+            const pending = new Set();
+            for (const [sessionId, queue] of pendingReplies) {
+              if (queue.some((entry) => entry.groupId === groupId)) pending.add(sessionId);
+            }
+            const participants = group.participantIds
+              .map((identityId) => {
+                const identity = records.find((record) => record.identity.id === identityId)?.identity;
+                if (identity === undefined) return null;
+                const sessionId = group.sessions?.[identityId];
+                return {
+                  id: identity.id,
+                  name: identity.name,
+                  role: identity.role,
+                  accent: identity.accent,
+                  avatar: identity.avatar,
+                  running: typeof sessionId === 'string' && pending.has(sessionId),
+                };
+              })
+              .filter((participant) => participant !== null);
+            return json({
+              ok: true,
+              group: { id: group.id, name: group.name, participants, createdAt: group.createdAt },
+              messages: readTranscript(group),
+            });
+          },
+        }),
+      'personal-agent: group state route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: GROUP_SEND_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const groupId = typeof body.groupId === 'string' ? body.groupId : '';
+            const group = groups.get(groupId);
+            if (group === undefined || !Array.isArray(group.participantIds)) {
+              return failure(404, 'unknown-group', `no multi-agent group "${groupId}"`);
+            }
+            const text = typeof body.text === 'string' ? body.text.trim() : '';
+            if (text === '') return failure(400, 'empty-message', 'a group message needs text');
+            const controller = ctx.get('sessionController');
+            if (controller === undefined || typeof controller.prompt !== 'function') {
+              return failure(409, 'session-controller-unavailable', 'this Host cannot prompt a group participant');
+            }
+            const history = readTranscript(group);
+            const targets = addressedParticipants(group, text, body.mentions);
+            const message = {
+              id: `message-${randomUUID()}`,
+              role: 'user',
+              text,
+              time: new Date().toISOString(),
+            };
+            await appendTranscript(group, message);
+            const failures = [];
+            await Promise.all(
+              targets.map(async (identityId) => {
+                const identity = records.find((record) => record.identity.id === identityId)?.identity;
+                const sessionId = group.sessions?.[identityId];
+                if (identity === undefined || typeof sessionId !== 'string') {
+                  failures.push({ identityId, message: 'participant has no Session' });
+                  return;
+                }
+                const prompt = participantPrompt(group, identity, text, history, targets.length < group.participantIds.length);
+                const queue = pendingReplies.get(sessionId) ?? [];
+                const startSeq = ctx.get('sessions')?.get?.(sessionId)?.log?.length ?? 0;
+                const pendingEntry = { groupId, identityId, startSeq };
+                queue.push(pendingEntry);
+                pendingReplies.set(sessionId, queue);
+                try {
+                  await controller.prompt(
+                    { sessionId, content: [{ type: 'text', text: prompt }], requestId: `group-${randomUUID()}` },
+                    AbortSignal.timeout(30000),
+                  );
+                } catch (error) {
+                  const current = pendingReplies.get(sessionId);
+                  if (current !== undefined) {
+                    const index = current.indexOf(pendingEntry);
+                    if (index >= 0) current.splice(index, 1);
+                    if (current.length === 0) pendingReplies.delete(sessionId);
+                  }
+                  failures.push({ identityId, message: error?.details?.reason ?? messageOf(error) });
+                }
+              }),
+            );
+            return json({ ok: true, message, targets, failures });
+          },
+        }),
+      'personal-agent: group send route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: GROUP_RENAME_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const key = typeof body.groupId === 'string' && body.groupId !== '' ? body.groupId : typeof body.sessionId === 'string' ? body.sessionId : '';
+            const group = groups.get(key);
+            if (group === undefined) return failure(404, 'unknown-group', `no group "${key}"`);
+            const name = typeof body.name === 'string' ? body.name.trim().slice(0, 120) : '';
+            if (name === '') return failure(400, 'invalid-name', 'a group needs a non-empty name');
+            group.name = name;
+            await writeGroups();
+            if (typeof group.workspaceId === 'string') {
+              try {
+                const registry = await registryWithin(1500);
+                const workspace = registry?.list().find((candidate) => candidate.id === group.workspaceId);
+                if (workspace !== undefined) await workspace.setTitle(name);
+              } catch (error) {
+                logger?.warn?.(`personal-agent: could not rename group workspace: ${messageOf(error)}`);
+              }
+            }
+            if (typeof group.sessionId === 'string') {
+              const controller = ctx.get('sessionController');
+              if (controller !== undefined && typeof controller.rename === 'function') {
+                try {
+                  await controller.rename({ sessionId: group.sessionId, title: name });
+                } catch (error) {
+                  logger?.warn?.(`personal-agent: could not rename group session: ${messageOf(error)}`);
+                }
+              }
+            }
+            return json({ ok: true, groupId: groupKey(group), name });
+          },
+        }),
+      'personal-agent: rename group route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: GROUP_REMOVE_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const key = typeof body.groupId === 'string' && body.groupId !== '' ? body.groupId : typeof body.sessionId === 'string' ? body.sessionId : '';
+            const group = groups.get(key);
+            if (group === undefined) return failure(404, 'unknown-group', `no group "${key}"`);
+            const registry = await registryWithin(2000);
+            if (Array.isArray(group.participantIds)) {
+              for (const identityId of group.participantIds) {
+                const sessionId = group.sessions?.[identityId];
+                if (typeof sessionId !== 'string') continue;
+                if (registry !== undefined) {
+                  const archived = new Set(registry.archivedSessionIds);
+                  if (!archived.has(sessionId)) {
+                    try {
+                      await registry.archiveSession(sessionId, { stopActivity: true });
+                    } catch (error) {
+                      return failure(500, 'archive-failed', messageOf(error));
+                    }
+                  }
+                }
+                pendingReplies.delete(sessionId);
+              }
+              if (typeof group.workspaceId === 'string') {
+                const groupWorkspace = registry?.list().find((candidate) => candidate.id === group.workspaceId);
+                if (groupWorkspace !== undefined) {
+                  try {
+                    await registry.delete(groupWorkspace.id);
+                  } catch (error) {
+                    return failure(500, 'workspace-delete-failed', messageOf(error));
+                  }
+                }
+              }
+              groups.delete(key);
+              indexParticipants();
+              await writeGroups();
+              return json({ ok: true, groupId: key });
+            }
+            const sessionId = group.sessionId;
+            if (registry !== undefined) {
+              const workspace = registry.list().find((candidate) => candidate.sessionIds.includes(sessionId));
+              if (workspace !== undefined) {
+                const archived = new Set(registry.archivedSessionIds);
+                if (!archived.has(sessionId)) {
+                  try {
+                    await registry.archiveSession(sessionId, { stopActivity: true });
+                  } catch (error) {
+                    return failure(500, 'archive-failed', messageOf(error));
+                  }
+                }
+              }
+            }
+            if (registry !== undefined) {
+              // A Session created before groups owned a home is still a member
+              // of the host identity's workspace. Detach it so a closed group
+              // can never be selected as that identity's private conversation.
+              for (const workspace of registry.list()) {
+                if (!workspace.sessionIds.includes(sessionId)) continue;
+                try {
+                  await workspace.detachSession(sessionId);
+                } catch (error) {
+                  logger?.warn?.(`personal-agent: could not detach closed group from ${workspace.title}: ${messageOf(error)}`);
+                }
+              }
+            }
+            if (typeof group.workspaceId === 'string') {
+              const groupWorkspace = registry?.list().find((candidate) => candidate.id === group.workspaceId);
+              if (groupWorkspace !== undefined) {
+                try {
+                  await registry.delete(groupWorkspace.id);
+                } catch (error) {
+                  return failure(500, 'workspace-delete-failed', messageOf(error));
+                }
+              }
+            }
+            groups.delete(key);
+            await writeGroups();
+            return json({ ok: true, sessionId });
+          },
+        }),
+      'personal-agent: close group route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: FRESH_CONSUME_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const identityId = typeof body.identityId === 'string' ? body.identityId : '';
+            if (freshSessions.delete(identityId)) await writeFresh();
+            freshSources.delete(identityId);
+            return json({ ok: true, identityId });
+          },
+        }),
+      'personal-agent: consume fresh conversation marker',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: TRANSCRIPT_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+            const allowed = [...freshSources.values()].includes(sessionId);
+            if (!allowed) return failure(404, 'unknown-history', 'this Session is not a pending display-only history source');
+            const controller = ctx.get('sessionController');
+            if (controller === undefined || typeof controller.events !== 'function') {
+              return failure(409, 'session-controller-unavailable', 'this Host cannot read Session events');
+            }
+            let page;
+            try {
+              page = await controller.events(
+                { address: { kind: 'session', sessionId }, maxMessages: 200 },
+                AbortSignal.timeout(5000),
+              );
+            } catch (error) {
+              return failure(500, 'transcript-failed', messageOf(error));
+            }
+            const messages = [];
+            for (const record of page.records) {
+              if (record.type !== 'event') continue;
+              const event = record.event;
+              if (event.type !== 'user/message' && event.type !== 'assistant/message') continue;
+              const data = event.data;
+              const message = event.type === 'assistant/message' ? data?.message : data;
+              if (message === null || typeof message !== 'object') continue;
+              if (event.type === 'user/message' && message.source?.kind !== 'user') continue;
+              const content = Array.isArray(message.content) ? message.content : [];
+              const text = content
+                .filter((block) => block !== null && typeof block === 'object' && block.type === 'text')
+                .map((block) => (typeof block.text === 'string' ? block.text : ''))
+                .join('\n')
+                .trim();
+              if (text === '') continue;
+              messages.push({
+                seq: event.seq,
+                role: event.type === 'assistant/message' ? 'assistant' : 'user',
+                text,
+              });
+            }
+            messages.sort((left, right) => left.seq - right.seq);
+            return json({ ok: true, messages, hasMore: page.hasMore });
+          },
+        }),
+      'personal-agent: display-only transcript route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: COMPACT_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+            const identityId = [...freshSessions.entries()].find(([, fresh]) => fresh === sessionId)?.[0];
+            if (identityId === undefined) {
+              return failure(409, 'not-a-fresh-conversation', 'this Session is not waiting for context compaction');
+            }
+            const controller = ctx.get('sessionController');
+            if (controller === undefined) return failure(409, 'session-controller-unavailable', 'this Host cannot resolve the Agent');
+            let resolved;
+            try {
+              resolved = await controller.resolveAgent(sessionId);
+            } catch (error) {
+              return failure(500, 'agent-resolve-failed', messageOf(error));
+            }
+            if (resolved.agent === undefined) {
+              return failure(409, 'agent-unavailable', resolved.error?.message ?? 'the Agent is unavailable');
+            }
+            // The personal preset isolates compaction inside a child group that
+            // only the Agent-scoped /compact command can reach.
+            const commands = commandsRef;
+            if (commands === undefined) return failure(409, 'compaction-unavailable', 'the command runtime is unavailable');
+            try {
+              const execution = await commands.execute(
+                resolved.agent,
+                '/compact',
+                [],
+                AbortSignal.timeout(120_000),
+              );
+              if (execution === undefined) {
+                return failure(409, 'compaction-unavailable', 'the /compact command is unavailable');
+              }
+              if (execution.result.kind === 'error') {
+                return failure(409, 'compact-failed', execution.result.text);
+              }
+              freshSessions.delete(identityId);
+              await writeFresh();
+              return json({ ok: true, compacted: true, sessionId, note: execution.result.text });
+            } catch (error) {
+              return failure(409, 'compact-failed', messageOf(error));
+            }
+          },
+        }),
+      'personal-agent: compact fresh conversation',
+    );
+
     scope.effect(
       () =>
         scope.connection.fetch.register({
@@ -989,8 +2401,7 @@ export function apply(ctx, rawConfig) {
             if (typeof body.workspaceId === 'string' && body.workspaceId !== '') {
               const workspace = registry.get(body.workspaceId);
               if (workspace === undefined) return failure(404, 'unknown-workspace', `no workspace "${body.workspaceId}"`);
-              const archived = new Set(registry.archivedSessionIds);
-              const sessionId = workspace.sessionIds.find((id) => !archived.has(id)) ?? null;
+              const sessionId = await newestConversation(workspace, registry);
               return json({ ok: true, workspaceId: workspace.id, sessionId, title: workspace.title, agentPreset: null });
             }
             if (typeof body.identityId !== 'string' || body.identityId === '') {
@@ -1001,7 +2412,10 @@ export function apply(ctx, rawConfig) {
             try {
               const workspace = await ensureIdentity(record.identity.id, registry);
               const archived = new Set(registry.archivedSessionIds);
-              const sessionId = workspace.sessionIds.find((id) => !archived.has(id)) ?? null;
+              const fresh = freshSessions.get(record.identity.id);
+              const sessionId = typeof fresh === 'string' && workspace.sessionIds.includes(fresh) && !archived.has(fresh)
+                ? fresh
+                : await newestConversation(workspace, registry);
               return json({ ok: true, workspaceId: workspace.id, sessionId, title: workspace.title, agentPreset: PRESET_ID });
             } catch (error) {
               const info = homesInfo.get(record.identity.id);

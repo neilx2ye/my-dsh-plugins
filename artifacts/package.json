@@ -1,0 +1,35 @@
+{
+  "name": "@local/dsh-artifacts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Artifacts and a canvas panel: the agent writes HTML, SVG, charts, Mermaid, Markdown, or code into a side panel that renders, edits, versions, and exports it.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "lib/store.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}

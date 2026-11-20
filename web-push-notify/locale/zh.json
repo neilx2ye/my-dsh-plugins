@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "任务完成通知",
+    "description": "任务完成时通过 Push API 与 Service Worker 发送系统通知，关闭标签页后仍然有效。"
+  }
+}

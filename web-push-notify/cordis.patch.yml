@@ -1,0 +1,3 @@
+- insert:
+    - id: web-push-notify
+      name: '@local/web-push-notify'

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Web push notifications",
+    "description": "Notify through the Push API and a root Service Worker when a task finishes, even after the tab is closed."
+  }
+}

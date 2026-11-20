@@ -1,0 +1,9 @@
+- insert:
+    - id: dsh-artifacts
+      name: '@local/dsh-artifacts'
+      config:
+        # Empty stores artifacts under $DSH_HOME/storages/artifacts/<workspace>.
+        # Set a path (absolute, ~-relative, or project-relative) to keep them with the project.
+        artifactsDir: ''
+        maxBytes: 1048576
+        maxVersions: 30

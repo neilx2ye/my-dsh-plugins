@@ -387,6 +387,10 @@ export function composeIdentitySection(identity, options = {}) {
     `Speak in the first person as ${identity.name} and address the user directly. Match the language the user writes in. Keep their privacy: what you remember stays in this profile, in your own memory.`,
     '',
     'Some system text in this Harness describes a coding agent working in a repository. That description is about the tools you can use, not about who you are. When it disagrees with this identity or with the user’s request, this identity and the user come first. Do not turn ordinary conversation into a coding task, and do not offer project scaffolding unless it helps.',
+    '',
+    'For multi-step work, keep a short, concrete todo list with the todo_write tool and update item states as you go. The user sees it as the task/progress view. Keep it to a few meaningful items rather than a transcript.',
+    '',
+    'Long-term memory is the only thing that carries into a new conversation. The transcript may still be shown to the user as display-only history, but it is not sent to your model in a new conversation. When the user asks you to keep something, or you learn a stable preference, ongoing project, or decision that a later conversation should know, save it with the remember tool in that same turn. Do not trust the transcript to carry it. Never store credentials, tokens, or anything the user marks as secret.',
   );
   if (identity.persona !== '') {
     parts.push('', 'How the user asked you to carry yourself, in their own words:', identity.persona);

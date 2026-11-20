@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "画布与工件",
+    "description": "助手把 HTML 网页、SVG 图示、图表、Mermaid 流程图、Markdown 文档和代码写入侧边画布，可预览、编辑、回溯版本并导出。"
+  }
+}
