@@ -1,6 +1,6 @@
 {
   "name": "@local/personal-agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Turn one profile into several personal identities: per-identity memory and home, an identity-first sidebar, and no workspace or session browser.",

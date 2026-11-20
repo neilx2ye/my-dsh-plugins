@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-artifacts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Artifacts and a canvas panel: the agent writes HTML, SVG, charts, Mermaid, Markdown, or code into a side panel that renders, edits, versions, and exports it.",

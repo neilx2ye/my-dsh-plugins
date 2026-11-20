@@ -320,7 +320,10 @@ with its own persona, memory, and tools.
 The group opens as a plugin-rendered feed instead of a single DSH Session. When
 you send a message, the Host fans it out to every participant in parallel; each
 one sees the user message plus the group history and replies as itself. A
-message containing `@<name>` goes only to the named identities. Replies are
+message containing `@<name>` goes only to the named identities. Typing `@` in
+the group composer opens a member picker above the input: it lists the group's
+participants, narrows as you type, and inserts `@<name> ` when you press
+`Enter`/`Tab`, click a row, or use `↑`/`↓` to choose. Replies are
 written to the group transcript (`transcript.json`) as each participant's turn
 ends and appear under that identity's avatar and name. The page polls the
 transcript and marks participants that are still replying.
@@ -345,17 +348,43 @@ uses the same rule: the session title and preset controls are hidden, and the
 identity's avatar/name or the group name is shown instead. Project heroes and
 headers are unchanged.
 
-### Progress strip
+### Unread badges
 
-The composer dock carries a compact status line for the focused identity:
+Each identity and group row shows a red circle with the number of unread
+assistant messages. The Host counts visible assistant replies for identity
+Sessions and legacy group Sessions; a multi-agent group counts replies as they
+are appended to its transcript. Opening and viewing an identity or group marks
+it read, and the client refreshes the count while it stays visible. The counts
+are in-process state, not persisted across a Host restart.
 
-- `正在处理` while any of the identity's Sessions is running, with a subtle
-  pulse and the active todo when one exists;
-- `任务` with the active todo, completed/total count, and the number of other
-  running identity Sessions when the agent is idle;
-- hidden when the identity has no running Session and no todos.
+### Chat style and working bubble
 
-The line is passive (no click target); the full todo list remains the shipped
+Identity conversations use the same bubble layout as a group chat: your messages
+sit in a right-aligned tinted bubble, and each agent reply is a left-aligned
+bubble with the identity's avatar and name next to it. Project conversations
+keep the shipped transcript, and group pages already render a bubble feed.
+
+The reply stream fills the conversation pane the way the group chat page does:
+the transcript column and the composer span the available width, so the feed
+starts at the pane edge instead of sitting in a centred column, and your
+right-aligned bubbles end at the opposite edge. Bubble width is relative rather
+than a fixed cap: both the agent reply and your own message grow with the pane
+but stop at 60% of the conversation width, so short messages stay compact and
+long ones stay readable. Wide Markdown tables scroll inside the bubble rather
+than spilling past its edge.
+
+Tool calls, reasoning rows, retry notices, turn-process summaries, and turn
+metadata are hidden by default. The `◎`/`◉` button in the identity module header
+toggles that preference per browser; showing it brings the original work rows
+back for inspection.
+
+While an identity Session is running, a working bubble joins the end of the
+transcript with the identity's avatar and a rotating line such as
+`正在忙活…`, plus the active todo when one exists. It is part of the message
+flow, not a panel floating over it: it scrolls away with the conversation, so
+scrolling back never has it cover earlier messages, and it is only pulled into
+view while the reader already follows the tail. It replaces the shipped running
+indicator while work details are hidden. The full todo list remains the shipped
 TodoPanel above the composer. Auto-switch only runs while an identity
 conversation is on screen, never while a project conversation is focused.
 

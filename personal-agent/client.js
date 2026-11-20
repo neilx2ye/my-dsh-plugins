@@ -53,8 +53,10 @@ window.__ModuleLoader__.load({
     const FRESH_CONSUME_URL = 'api/personal-agent/fresh/consume';
     /** Read the previous conversation for the display-only history block. */
     const TRANSCRIPT_URL = 'api/personal-agent/transcript';
+    /** Clear unread assistant messages for an identity or group. */
+    const READ_URL = 'api/personal-agent/read';
 
-    /** Local visibility preference for personal reasoning rows. */
+    /** Local visibility preference for the identity chat work details. */
     const THINKING_KEY = 'personal-agent:show-thinking';
     let thinkingVisible = false;
     try {
@@ -180,6 +182,9 @@ window.__ModuleLoader__.load({
       'how.projects.text': 'Your existing workspaces, session lists, search, drag, archive, and New Session keep working exactly as before. Identities are reached from the identity module directly above the workspace browser, or from this page.',
       'how.details': 'Details',
       'progress.working': 'Working',
+      'progress.busy1': 'Working on it',
+      'progress.busy2': 'Thinking it over',
+      'progress.busy3': 'Digging around',
       'progress.tasks': 'Tasks',
       'progress.running': 'In progress…',
       'progress.idle': 'No active task',
@@ -212,7 +217,8 @@ window.__ModuleLoader__.load({
       'groups.empty': 'Select a group from the identity module.',
       'groups.emptyFeed': 'No messages yet. Say something to the group.',
       'groups.composePlaceholder': 'Message the group… every participant replies unless you @mention one',
-      'groups.mentionHint': 'Send to all participants, or @name to address one',
+      'groups.mentionHint': 'Everyone answers by default — type @ to pick one member',
+      'groups.mentionPick': 'Pick a member to @',
       'groups.send': 'Send',
       'groups.sending': 'Sending…',
       'groups.sendFailed': 'Could not send: {message}',
@@ -226,8 +232,9 @@ window.__ModuleLoader__.load({
       'history.displayEmpty': 'No text messages to show.',
       'history.displayFailed': 'Could not load the previous conversation.',
       'history.you': 'You',
-      'thinking.show': 'Show reasoning',
-      'thinking.hide': 'Hide reasoning',
+      'thinking.show': 'Show process',
+      'thinking.hide': 'Hide process',
+      'unread.title': '{count} unread messages',
       'how.tools': 'Every identity can call remember and recall in any conversation.',
       footer: 'Personal Agent · scoped to this profile · no device-wide settings',
     };
@@ -316,6 +323,9 @@ window.__ModuleLoader__.load({
       'how.projects.text': '你原有的工作区、会话列表、搜索、拖拽、归档和新建会话都按原样工作；身份从工作区上方的身份模块或这个页面进入。',
       'how.details': '说明',
       'progress.working': '正在处理',
+      'progress.busy1': '正在忙活',
+      'progress.busy2': '正在琢磨',
+      'progress.busy3': '正在翻资料',
       'progress.tasks': '任务',
       'progress.running': '进行中…',
       'progress.idle': '暂无进行中的任务',
@@ -348,7 +358,8 @@ window.__ModuleLoader__.load({
       'groups.empty': '从身份模块选择一个群聊。',
       'groups.emptyFeed': '还没有消息，直接对群里说点什么。',
       'groups.composePlaceholder': '发到群里…默认所有身份都会回复，用 @名字 只叫某一位',
-      'groups.mentionHint': '默认发给所有成员；用 @名字 只叫某一位',
+      'groups.mentionHint': '默认发给所有成员，输入 @ 可点名某一位',
+      'groups.mentionPick': '选择要 @ 的成员',
       'groups.send': '发送',
       'groups.sending': '发送中…',
       'groups.sendFailed': '发送失败：{message}',
@@ -362,8 +373,9 @@ window.__ModuleLoader__.load({
       'history.displayEmpty': '没有可展示的文字消息。',
       'history.displayFailed': '上一段对话加载失败。',
       'history.you': '你',
-      'thinking.show': '显示思考过程',
-      'thinking.hide': '隐藏思考过程',
+      'thinking.show': '显示过程',
+      'thinking.hide': '隐藏过程',
+      'unread.title': '{count} 条未读消息',
       'how.tools': '每个身份都可以在任何对话中调用 remember 和 recall。',
       footer: 'Personal Agent · 仅作用于当前 profile · 不写入设备全局设置',
     };
@@ -493,7 +505,57 @@ window.__ModuleLoader__.load({
 .pagent-identity-thinking:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
 .pagent-identity-thinking:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
 .pagent-identity-thinking[data-hidden="true"]{color:var(--dsw-alias-label-caption)}
-.pagent-hide-thinking [data-variant="think"]{display:none}
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="tool-call"]:not(:has([data-tool="ask_user_question"])),
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-process"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="model-retry"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="command"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="compaction"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="context"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="assistant-step"][data-chat-group-part="reasoning"],
+.pagent-identity-mode.pagent-hide-process [data-step-process="true"],
+.pagent-identity-mode.pagent-hide-process [data-variant="think"],
+.pagent-identity-mode.pagent-hide-process [data-chat-running]{display:none!important}
+/* PA identity chat: group-chat bubbles instead of the project transcript. */
+.pagent-identity-mode [data-chat-flow-kind="user"] [class*="_userStack"]{width:100%;max-width:none}
+.pagent-identity-mode [data-chat-flow-kind="user"] [class*="_bubble_"]{box-sizing:border-box;max-width:60%;margin-left:auto;padding:9px 12px;border:.5px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 30%,transparent);border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 16%,var(--dsw-alias-bg-layer-2));color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]{display:grid;grid-template-columns:24px minmax(0,1fr);grid-template-rows:auto auto;column-gap:8px;row-gap:3px;align-items:start;padding:2px 0;max-width:100%}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]::before{content:var(--pagent-avatar,"🙂");grid-column:1;grid-row:1 / span 2;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-top:1px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);background:var(--pagent-avatar-bg,var(--dsw-alias-bg-layer-2));color:var(--pagent-avatar-color,var(--dsw-alias-label-secondary));font-size:12px;font-weight:600;line-height:1;text-transform:uppercase}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"]::after{content:var(--pagent-name,"");grid-column:2;grid-row:1;padding-left:2px;color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-identity-mode header [data-conversation-tabs],.pagent-identity-mode header [class*="_viewsMore"]{display:none!important}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] > [data-slot] > div:first-child{grid-column:2;grid-row:2;box-sizing:border-box;justify-self:start;width:auto;max-width:60%;min-width:0;padding:9px 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] .md-table-wide{box-sizing:border-box;width:100%!important;max-width:100%!important;margin-left:0!important;padding-left:0!important;--dsh-table-spare:0px}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] [class*="_tableScroll"]{box-sizing:border-box;width:100%!important;max-width:100%!important;overflow-x:auto}
+.pagent-identity-mode [data-chat-flow-kind="turn-trigger"]{display:flex;justify-content:center;padding:4px 0 2px}
+.pagent-identity-mode [data-chat-flow-kind="turn-trigger"] > [data-slot] > section{box-sizing:border-box;width:auto;max-width:min(700px,92%);padding:2px 10px;border:.5px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2)}
+.pagent-identity-mode [data-chat-flow-kind="turn-trigger"] [class*="_header"]{gap:6px;padding:2px 0}
+.pagent-identity-mode [data-chat-flow-kind="turn-trigger"] [class*="_title"]{color:var(--dsw-alias-label-tertiary);font-size:10.5px}
+.pagent-identity-mode [data-chat-flow-kind="turn-trigger"] [class*="_time"]{color:var(--dsw-alias-label-tertiary);font-size:10px}
+.pagent-identity-mode [data-chat-flow-kind="turn-trigger"] [class*="_body"]{margin-top:2px}
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-tail"]{display:flex;justify-content:center;padding:2px 0 10px}
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-tail"] > [data-slot] > div{display:flex;justify-content:center;background:transparent;border:0;padding:0}
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-tail"] [class*="_actions"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-tail"] [class*="_card"],
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-tail"] [class*="_endInfo"] > span:not([class*="_timeEnd"]){display:none!important}
+.pagent-identity-mode.pagent-hide-process [data-chat-flow-kind="turn-tail"] [class*="_endInfo"]{background:transparent;border:0;padding:0;color:var(--dsw-alias-label-tertiary);font-size:10.5px}
+.pagent-identity-mode [data-composer-stat="activity"],.pagent-identity-mode [data-composer-stat="usage"]{display:none!important}
+/* PA identity chat: span the whole conversation like the group chat page.
+   The shipped transcript centres a fixed column; here the column and the composer
+   use the available width, so the feed starts at the pane edge instead of floating
+   in the middle. Bubbles keep their own readable caps. */
+.pagent-identity-mode [data-conversation-content]{--dsh-chat-content-width:100%;--dsh-composer-card-max-width:calc(100% - 32px)}
+.pagent-identity-mode [data-conversation-content] > [class*="_widthHandle"]{display:none!important}
+/* Working bubble above the composer. */
+.pagent-working-host{display:block;min-width:0}
+.pagent-working{box-sizing:border-box;display:flex;align-items:flex-start;gap:8px;width:100%;margin:0;padding:2px 0 8px}
+.pagent-working-avatar{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);font-size:12px;font-weight:600;line-height:1;margin-top:1px;text-transform:uppercase}
+.pagent-working-main{display:flex;flex-direction:column;gap:3px;min-width:0;max-width:60%}
+.pagent-working-name{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600;line-height:1.4;padding-left:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-working-bubble{box-sizing:border-box;display:flex;flex-direction:column;gap:3px;align-self:flex-start;max-width:100%;padding:9px 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.6}
+.pagent-working-text{display:inline-flex;align-items:center;gap:1px}
+.pagent-working-dots::after{content:'…';animation:pagent-working-dots 1.2s steps(3,end) infinite}
+.pagent-working-task{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
+@keyframes pagent-working-dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
 .pagent-identity-group{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}
 .pagent-identity-group:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
 .pagent-identity-group:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
@@ -534,11 +596,19 @@ window.__ModuleLoader__.load({
 .pagent-group-typing span::after{content:'…';animation:pagent-group-dots 1.2s steps(3,end) infinite}
 @keyframes pagent-group-dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
 .pagent-group-page-error{color:var(--dsw-alias-state-error-primary);font-size:12px;margin:0}
-.pagent-group-composer{display:flex;flex-direction:column;gap:8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:10px 12px}
+.pagent-group-composer{position:relative;display:flex;flex-direction:column;gap:8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:10px 12px}
 .pagent-group-input{width:100%;resize:vertical;min-height:56px;max-height:220px;background:transparent;border:0;outline:0;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:1.6}
 .pagent-group-input::placeholder{color:var(--dsw-alias-label-tertiary)}
 .pagent-group-composer-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .pagent-group-composer-hint{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-group-mentions{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);z-index:30;display:flex;flex-direction:column;gap:2px;box-sizing:border-box;max-height:224px;overflow-y:auto;padding:4px;border:.5px solid var(--dsw-alias-border-l1);border-radius:11px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 14px 38px rgba(0,0,0,.36);scrollbar-gutter:stable}
+.pagent-group-mention{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:34px;padding:4px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;min-width:0}
+.pagent-group-mention:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.pagent-group-mention[data-active="true"]{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.pagent-group-mention[data-active="true"] .pagent-group-mention-name{color:var(--dsw-alias-brand-primary)}
+.pagent-group-mention-copy{display:flex;flex-direction:column;gap:0;min-width:0;flex:1}
+.pagent-group-mention-name{font-size:12.5px;line-height:1.4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-group-mention-role{font-size:10.5px;line-height:1.4;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:640px){.pagent-group-page{padding:12px}.pagent-group-page-name{font-size:14px}.pagent-group-composer-hint{display:none}}
 @media (hover:none){.pagent-group-delete,.pagent-group-rename{opacity:.65}}
 .pagent-group-row{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:36px;padding:4px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;min-width:0}
@@ -587,6 +657,9 @@ window.__ModuleLoader__.load({
 .pagent-identity-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
 .pagent-identity-row:disabled{cursor:default;opacity:.6}
 .pagent-identity-copy{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.pagent-identity-name-row,.pagent-group-name-row{display:flex;align-items:center;gap:6px;min-width:0}
+.pagent-identity-name-row .pagent-identity-name,.pagent-group-name-row .pagent-group-name{min-width:0;flex:0 1 auto}
+.pagent-unread{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#e5484d;color:#fff;font-size:10px;line-height:1;font-weight:650;letter-spacing:0;box-shadow:0 0 0 1px var(--dsw-alias-bg-layer-1)}
 .pagent-identity-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;line-height:1.4;font-weight:600}
 .pagent-identity-role{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:1.4}
 .pagent-identity-busy{flex:none;color:var(--dsw-alias-label-tertiary);font-size:12px}
@@ -1368,6 +1441,61 @@ window.__ModuleLoader__.load({
       };
     }
 
+    /** Most participants the `@` menu lists at once. */
+    const MENTION_LIMIT = 8;
+
+    /**
+     * Find the live `@mention` token under the caret of a composer draft. A
+     * token starts at an `@` that does not continue a word (so `name@host`
+     * stays an address) and runs to the caret without whitespace, so a closed
+     * mention never reopens the picker.
+     * @param {string} value - composer draft.
+     * @param {number} caret - caret offset in the draft.
+     * @returns {{ start: number, end: number, query: string } | null} token span, or null when no mention is live.
+     */
+    function mentionTokenAt(value, caret) {
+      if (typeof value !== 'string' || !Number.isInteger(caret) || caret < 0 || caret > value.length) return null;
+      const before = value.slice(0, caret);
+      const at = before.lastIndexOf('@');
+      if (at === -1) return null;
+      const query = before.slice(at + 1);
+      if (/[\s@]/.test(query)) return null;
+      // Only an email-like preceding character suppresses the picker, so
+      // CJK text can open it without a space: `请@成员` works.
+      if (at > 0 && /[A-Za-z0-9._%+-]/.test(before[at - 1])) return null;
+      return { start: at, end: caret, query };
+    }
+
+    /**
+     * Filter a group's participants for the `@` menu by name, id, or role.
+     * @param {readonly object[]} participants - group participants.
+     * @param {string} query - text typed after `@`.
+     * @returns {object[]} matching participants, capped at MENTION_LIMIT.
+     */
+    function mentionCandidates(participants, query) {
+      const list = Array.isArray(participants) ? participants : [];
+      const needle = typeof query === 'string' ? query.trim().toLowerCase() : '';
+      const matched = needle === ''
+        ? list
+        : list.filter((participant) => {
+            if (participant === null || participant === undefined) return false;
+            return [participant.name, participant.id, participant.role].some((field) => typeof field === 'string' && field.toLowerCase().includes(needle));
+          });
+      return matched.slice(0, MENTION_LIMIT);
+    }
+
+    /**
+     * Replace one mention token with `@name ` and report the caret to restore.
+     * @param {string} value - composer draft.
+     * @param {{ start: number, end: number }} token - span from mentionTokenAt.
+     * @param {{ name: string }} participant - chosen participant.
+     * @returns {{ text: string, caret: number }} rewritten draft and caret offset.
+     */
+    function applyMention(value, token, participant) {
+      const insert = `@${participant.name} `;
+      return { text: value.slice(0, token.start) + insert + value.slice(token.end), caret: token.start + insert.length };
+    }
+
     /**
      * Build the multi-agent group feed page. Every participant is its own
      * agent; the page shows one merged feed and never inserts a host voice.
@@ -1383,7 +1511,10 @@ window.__ModuleLoader__.load({
         const [draft, setDraft] = React.useState('');
         const [sending, setSending] = React.useState(false);
         const [failure, setFailure] = React.useState(null);
+        /** Live `@` picker: token span under the caret plus the highlighted row. */
+        const [mention, setMention] = React.useState(null);
         const feedRef = React.useRef(null);
+        const inputRef = React.useRef(null);
 
         const groupId = group?.id ?? null;
         React.useEffect(() => {
@@ -1422,6 +1553,8 @@ window.__ModuleLoader__.load({
         const participants = Array.isArray(feed?.group?.participants) ? feed.group.participants : (group?.participants ?? []);
         const running = participants.filter((participant) => participant.running === true);
         const messageCount = messages.length;
+        const mentionChoices = mention === null ? [] : mentionCandidates(participants, mention.token.query);
+        const mentionIndex = mentionChoices.length === 0 ? -1 : Math.min(Math.max(mention.index, 0), mentionChoices.length - 1);
         React.useEffect(() => {
           const node = feedRef.current;
           if (node !== null) node.scrollTop = node.scrollHeight;
@@ -1435,11 +1568,50 @@ window.__ModuleLoader__.load({
           );
         }
 
+        /**
+         * Track the draft and the `@` token under the caret in one step, so the
+         * picker opens on `@` and narrows as the name is typed.
+         * @param {string} value - next draft.
+         * @param {number} caret - caret offset after the edit.
+         */
+        const updateDraft = (value, caret) => {
+          setDraft(value);
+          const token = mentionTokenAt(value, caret);
+          const choices = token === null ? [] : mentionCandidates(participants, token.query);
+          if (choices.length === 0) {
+            setMention(null);
+            return;
+          }
+          setMention((current) => ({
+            token,
+            index: current !== null && current.token.query === token.query ? Math.min(current.index, choices.length - 1) : 0,
+          }));
+        };
+
+        /**
+         * Replace the live `@` token with the chosen participant's name and put
+         * the caret after the inserted mention.
+         * @param {object | undefined} participant - chosen participant.
+         */
+        const pickMention = (participant) => {
+          if (mention === null || participant === undefined) return;
+          const next = applyMention(draft, mention.token, participant);
+          setDraft(next.text);
+          setMention(null);
+          window.requestAnimationFrame(() => {
+            const node = inputRef.current;
+            if (node === null) return;
+            node.focus();
+            node.setSelectionRange(next.caret, next.caret);
+          });
+        };
+
         const send = async () => {
           const text = draft.trim();
           if (text === '' || sending) return;
           setSending(true);
           setFailure(null);
+          setMention(null);
           try {
             const result = await requestJson(GROUP_SEND_URL, {
               method: 'POST',
@@ -1531,13 +1703,67 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'pagent-group-composer' },
+            mentionChoices.length === 0
+              ? null
+              : h(
+                  'div',
+                  { className: 'pagent-group-mentions', role: 'listbox', 'aria-label': tr('groups.mentionPick') },
+                  mentionChoices.map((participant, index) =>
+                    h(
+                      'button',
+                      {
+                        key: participant.id,
+                        type: 'button',
+                        role: 'option',
+                        'aria-selected': index === mentionIndex,
+                        'data-active': index === mentionIndex ? 'true' : 'false',
+                        className: 'pagent-group-mention',
+                        onMouseDown: (event) => {
+                          event.preventDefault();
+                          pickMention(participant);
+                        },
+                      },
+                      h(Avatar, { identity: participant, size: 20 }),
+                      h(
+                        'span',
+                        { className: 'pagent-group-mention-copy' },
+                        h('span', { className: 'pagent-group-mention-name' }, participant.name),
+                        typeof participant.role === 'string' && participant.role !== ''
+                          ? h('span', { className: 'pagent-group-mention-role' }, participant.role)
+                          : null,
+                      ),
+                    ),
+                  ),
+                ),
             h('textarea', {
               className: 'pagent-group-input',
+              ref: inputRef,
               value: draft,
               rows: 3,
               placeholder: tr('groups.composePlaceholder'),
-              onChange: (event) => setDraft(event.target.value),
+              onChange: (event) => updateDraft(event.target.value, event.target.selectionStart ?? event.target.value.length),
+              onClick: (event) => updateDraft(event.target.value, event.target.selectionStart ?? 0),
+              onBlur: () => setMention(null),
               onKeyDown: (event) => {
+                if (event.nativeEvent?.isComposing === true) return;
+                if (mentionChoices.length > 0) {
+                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    setMention((current) => (current === null ? current : { ...current, index: (mentionIndex + step + mentionChoices.length) % mentionChoices.length }));
+                    return;
+                  }
+                  if (event.key === 'Enter' || event.key === 'Tab') {
+                    event.preventDefault();
+                    pickMention(mentionChoices[mentionIndex]);
+                    return;
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setMention(null);
+                    return;
+                  }
+                }
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   void send();
@@ -2565,11 +2791,39 @@ window.__ModuleLoader__.load({
       const groups = state?.groups ?? [];
       const [historyIdentity, setHistoryIdentity] = React.useState(null);
       const [historySessions, setHistorySessions] = React.useState([]);
+      const [activeGroupId, setActiveGroupId] = React.useState(null);
       const sessionSource = ctx.get('sessions');
       const workspaceSource = ctx.get('workspaces');
       const sessionList = useObservable(sessionSource?.list);
       const workspaceList = useObservable(workspaceSource?.list);
       const thinking = useThinkingVisible();
+
+      React.useEffect(() => {
+        const timer = setInterval(() => {
+          if (typeof document === 'undefined' || document.visibilityState === 'visible') void store.load();
+        }, 2000);
+        return () => clearInterval(timer);
+      }, []);
+
+      React.useEffect(() => {
+        if (activeGroupId === null) return undefined;
+        let cancelled = false;
+        const mark = async () => {
+          if (cancelled) return;
+          await requestJson(READ_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ groupId: activeGroupId }),
+          }).catch(() => undefined);
+          if (!cancelled) await store.load(true).catch(() => undefined);
+        };
+        void mark();
+        const timer = setInterval(() => void mark(), 2000);
+        return () => {
+          cancelled = true;
+          clearInterval(timer);
+        };
+      }, [activeGroupId]);
 
       const manage = () => {
         const layout = ctx.get('layout');
@@ -2717,9 +2971,16 @@ window.__ModuleLoader__.load({
       };
 
       const open = async (identityId) => {
+        setActiveGroupId(null);
         setBusy(identityId);
         setFailure(null);
         try {
+          await requestJson(READ_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ identityId }),
+          }).catch(() => undefined);
+          await store.load(true).catch(() => undefined);
           await openIdentity(ctx, identityId);
         } catch (error) {
           setFailure(messageOf(error));
@@ -2800,7 +3061,22 @@ window.__ModuleLoader__.load({
                     h(
                       'span',
                       { className: 'pagent-identity-copy' },
-                      h('span', { className: 'pagent-identity-name' }, identity.name),
+                      h(
+                        'span',
+                        { className: 'pagent-identity-name-row' },
+                        h('span', { className: 'pagent-identity-name' }, identity.name),
+                        (identity.unread ?? 0) > 0
+                          ? h(
+                              'span',
+                              {
+                                className: 'pagent-unread',
+                                title: tr('unread.title', { count: identity.unread }),
+                                'aria-label': tr('unread.title', { count: identity.unread }),
+                              },
+                              identity.unread > 99 ? '99+' : identity.unread,
+                            )
+                          : null,
+                      ),
                       h('span', { className: 'pagent-identity-role' }, identity.role === '' ? tr('identity.editTitle') : identity.role),
                     ),
                     busy === identity.id ? h('span', { className: 'pagent-identity-busy' }, '…') : null,
@@ -2841,7 +3117,22 @@ window.__ModuleLoader__.load({
                     h(
                       'span',
                       { className: 'pagent-group-copy' },
-                      h('span', { className: 'pagent-group-name' }, group.name),
+                      h(
+                        'span',
+                        { className: 'pagent-group-name-row' },
+                        h('span', { className: 'pagent-group-name' }, group.name),
+                        (group.unread ?? 0) > 0
+                          ? h(
+                              'span',
+                              {
+                                className: 'pagent-unread',
+                                title: tr('unread.title', { count: group.unread }),
+                                'aria-label': tr('unread.title', { count: group.unread }),
+                              },
+                              group.unread > 99 ? '99+' : group.unread,
+                            )
+                          : null,
+                      ),
                       h(
                         'span',
                         { className: 'pagent-group-members' },
@@ -2932,9 +3223,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Compact running/progress strip in the composer dock. It shows the active
-     * identity task and how many of its sessions are working, and reports the
-     * current identity/Session so the auto-switch poll knows where the user is.
+     * Working bubble above the composer for the focused identity. It shows the
+     * avatar, a playful status line, and the active todo while any of the
+     * identity's Sessions runs, and reports the current Session so the
+     * auto-switch poll knows where the user is.
      * @param props.ctx - client plugin context.
      * @param props.sessionId - the Session owning this composer.
      */
@@ -2962,6 +3254,26 @@ window.__ModuleLoader__.load({
         : state?.identities?.find((item) => item.home.workspaceId === workspace?.workspaceId) ?? null;
 
       React.useEffect(() => {
+        if (identity === null) return undefined;
+        let cancelled = false;
+        const mark = async () => {
+          if (cancelled) return;
+          await requestJson(READ_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ identityId: identity.id }),
+          }).catch(() => undefined);
+          if (!cancelled) await store.load(true).catch(() => undefined);
+        };
+        void mark();
+        const timer = setInterval(() => void mark(), 2000);
+        return () => {
+          cancelled = true;
+          clearInterval(timer);
+        };
+      }, [identity?.id]);
+
+      React.useEffect(() => {
         if (typeof sessionId !== 'string') return undefined;
         conversationFocus.identityId = identity?.id ?? null;
         conversationFocus.sessionId = sessionId;
@@ -2976,11 +3288,11 @@ window.__ModuleLoader__.load({
         };
       }, [identity?.id, sessionId]);
 
-      if (typeof sessionId !== 'string' || identity === null) return null;
       const sessionIds = workspace?.sessionIds ?? [];
       const summaries = sessionIds.map((id) => sessionList?.byId?.[id]).filter((item) => item !== undefined);
       const running = summaries.filter((item) => item.running);
       const currentRunning = sessionList?.byId?.[sessionId]?.running === true;
+      const thinking = useThinkingVisible();
       const currentTodos = Array.isArray(projectedTodos) && projectedTodos.length > 0
         ? projectedTodos
         : sessionList?.projectionsBySession?.[sessionId]?.values?.todos;
@@ -2990,28 +3302,103 @@ window.__ModuleLoader__.load({
           : (sessionIds
               .map((id) => sessionList?.projectionsBySession?.[id]?.values?.todos)
               .find((items) => Array.isArray(items) && items.length > 0) ?? []);
-      if (running.length === 0 && todos.length === 0) return null;
-      const active = todos.find((item) => item.status === 'in_progress') ?? null;
-      const done = todos.filter((item) => item.status === 'completed').length;
-      const total = todos.length;
-      const otherRunning = Math.max(0, running.length - (currentRunning ? 1 : 0));
       const working = running.length > 0;
-      const detail = active?.content ?? (working ? tr('progress.running') : tr('progress.idle'));
-      return h(
+      const [busyIndex, setBusyIndex] = React.useState(0);
+      React.useEffect(() => {
+        if (!working) return undefined;
+        setBusyIndex(0);
+        const timer = setInterval(() => setBusyIndex((index) => (index + 1) % 3), 3800);
+        return () => clearInterval(timer);
+      }, [working]);
+      const showWorking = typeof sessionId === 'string' && identity !== null && working && !thinking;
+      // The working bubble belongs to the transcript, not to the composer dock:
+      // a dock bubble floats over the feed and hides messages while scrolling back.
+      // A portal host at the end of the chat column keeps it in the flow, so it
+      // scrolls away with the conversation and never covers earlier messages.
+      const [workingHost, setWorkingHost] = React.useState(null);
+      React.useEffect(() => {
+        if (!showWorking) {
+          setWorkingHost(null);
+          return undefined;
+        }
+        let cancelled = false;
+        let timer = null;
+        let attempts = 0;
+        let host = null;
+        let observer = null;
+        const pinToTail = () => {
+          const scope = document.querySelector('[data-conversation-content]');
+          if (scope === null || scope.querySelector('[data-chat-following-tail]') === null) return;
+          const scroller = scope.querySelector('[class*="_scrollBody"]');
+          if (scroller !== null) scroller.scrollTop = scroller.scrollHeight;
+        };
+        const attach = () => {
+          if (cancelled) return;
+          const scope = document.querySelector('[data-conversation-content]');
+          const column = scope?.querySelector('[class*="_column"]') ?? null;
+          const flow = scope?.querySelector('[data-slot="conversation.chat.flow"]') ?? null;
+          const parent = column ?? flow?.parentElement ?? null;
+          if (parent === null) {
+            if (attempts < 20) {
+              attempts += 1;
+              timer = setTimeout(attach, 150);
+            }
+            return;
+          }
+          host = document.createElement('div');
+          host.className = 'pagent-working-host';
+          parent.appendChild(host);
+          setWorkingHost(host);
+          // Reveal the bubble once, and whenever its text wraps to another line,
+          // but only while the reader is already following the tail.
+          observer = new ResizeObserver(pinToTail);
+          observer.observe(host);
+          window.requestAnimationFrame(pinToTail);
+        };
+        attach();
+        return () => {
+          cancelled = true;
+          if (timer !== null) clearTimeout(timer);
+          if (observer !== null) observer.disconnect();
+          if (host !== null) host.remove();
+        };
+      }, [showWorking, sessionId]);
+      if (!showWorking || identity === null || workingHost === null) return null;
+      const active = todos.find((item) => item.status === 'in_progress') ?? null;
+      const otherRunning = Math.max(0, running.length - (currentRunning ? 1 : 0));
+      const busyKey = ['progress.busy1', 'progress.busy2', 'progress.busy3'][busyIndex] ?? 'progress.busy1';
+      return ReactDOM.createPortal(h(
         'div',
         {
-          className: 'pagent-progress',
-          'data-running': working ? 'true' : 'false',
+          className: 'pagent-working',
+          'data-running': 'true',
           role: 'status',
           'aria-live': 'polite',
-          title: detail,
         },
-        h('span', { className: 'pagent-progress-dot', 'aria-hidden': true }),
-        h('span', { className: 'pagent-progress-label' }, working ? tr('progress.working') : tr('progress.tasks')),
-        h('span', { className: 'pagent-progress-task' }, detail),
-        total > 0 ? h('span', { className: 'pagent-progress-count' }, tr('progress.completed', { done, total })) : null,
-        otherRunning > 0 ? h('span', { className: 'pagent-progress-other' }, tr('progress.other', { count: otherRunning })) : null,
-      );
+        h(
+          'span',
+          {
+            className: 'pagent-working-avatar',
+            'aria-hidden': true,
+            style: { background: identity.accent, color: readableText(identity.accent) },
+          },
+          avatarGlyph(identity),
+        ),
+        h(
+          'div',
+          { className: 'pagent-working-main' },
+          h('span', { className: 'pagent-working-name' }, identity.name),
+          h(
+            'div',
+            { className: 'pagent-working-bubble' },
+            h('span', { className: 'pagent-working-text' }, tr(busyKey), h('span', { className: 'pagent-working-dots', 'aria-hidden': true })),
+            active?.content ? h('span', { className: 'pagent-working-task' }, active.content) : null,
+            otherRunning > 0
+              ? h('span', { className: 'pagent-working-task' }, tr('progress.other', { count: otherRunning }))
+              : null,
+          ),
+        ),
+      ), workingHost);
     }
 
     /**
@@ -3160,7 +3547,6 @@ window.__ModuleLoader__.load({
           : null,
       );
     }
-
     /**
      * Personalize the active conversation header: hide the Session title and
      * preset controls for identity and group Sessions, and show the agent's
@@ -3190,29 +3576,90 @@ window.__ModuleLoader__.load({
       const identity = group === null
         ? state?.identities?.find((candidate) => candidate.home.workspaceId === workspace?.workspaceId) ?? null
         : null;
+      const groupReadId = group?.id ?? group?.sessionId ?? null;
+      const identityReadId = identity?.id ?? null;
 
       React.useEffect(() => {
-        if ((group === null && identity === null) || markerRef.current === null) {
-          setHost(null);
-          return undefined;
-        }
-        const header = markerRef.current.closest('header');
-        const cluster = header?.querySelector('[class*="_titleCluster"]');
-        if (header === null || cluster === null) {
-          setHost(null);
-          return undefined;
-        }
-        const root = markerRef.current.closest('[data-phase]');
-        const element = document.createElement('div');
-        element.className = 'pagent-header-host';
-        cluster.prepend(element);
-        header.classList.add('pagent-header-mode');
-        if (root !== null) root.classList.toggle('pagent-hide-thinking', !thinking);
-        setHost(element);
+        if (groupReadId === null && identityReadId === null) return undefined;
+        let cancelled = false;
+        const mark = async () => {
+          if (cancelled) return;
+          await requestJson(READ_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(groupReadId !== null ? { groupId: groupReadId } : { identityId: identityReadId }),
+          }).catch(() => undefined);
+          if (!cancelled) await store.load(true).catch(() => undefined);
+        };
+        void mark();
+        const timer = setInterval(() => void mark(), 2000);
         return () => {
-          element.remove();
-          header.classList.remove('pagent-header-mode');
-          if (root !== null) root.classList.remove('pagent-hide-thinking');
+          cancelled = true;
+          clearInterval(timer);
+        };
+      }, [groupReadId, identityReadId]);
+
+      React.useEffect(() => {
+        if (group === null && identity === null) {
+          setHost(null);
+          return undefined;
+        }
+        let cancelled = false;
+        let timer = null;
+        let attempts = 0;
+        let element = null;
+        let header = null;
+        let root = null;
+        const attach = () => {
+          if (cancelled) return;
+          const marker = markerRef.current;
+          if (marker === null) return;
+          const candidate = marker.closest('header');
+          const cluster = candidate?.querySelector('[class*="_titleCluster"]');
+          if (candidate === null || cluster === undefined || cluster === null) {
+            if (attempts < 40) {
+              attempts += 1;
+              timer = setTimeout(attach, 150);
+            }
+            return;
+          }
+          header = candidate;
+          root = marker.closest('[data-phase]');
+          element = document.createElement('div');
+          element.className = 'pagent-header-host';
+          cluster.prepend(element);
+          header.classList.add('pagent-header-mode');
+          if (root !== null) {
+            root.classList.toggle('pagent-identity-mode', identity !== null);
+            root.classList.toggle('pagent-hide-process', !thinking);
+            if (identity !== null) {
+              root.style.setProperty('--pagent-avatar', JSON.stringify(avatarGlyph(identity)));
+              root.style.setProperty('--pagent-name', JSON.stringify(identity.name || ''));
+              root.style.setProperty('--pagent-avatar-bg', identity.accent || '#5b5bd6');
+              root.style.setProperty('--pagent-avatar-color', readableText(identity.accent || '#5b5bd6'));
+            } else {
+              root.style.removeProperty('--pagent-avatar');
+              root.style.removeProperty('--pagent-name');
+              root.style.removeProperty('--pagent-avatar-bg');
+              root.style.removeProperty('--pagent-avatar-color');
+            }
+          }
+          setHost(element);
+        };
+        attach();
+        return () => {
+          cancelled = true;
+          if (timer !== null) clearTimeout(timer);
+          if (element !== null) element.remove();
+          if (header !== null) header.classList.remove('pagent-header-mode');
+          if (root !== null) {
+            root.classList.remove('pagent-identity-mode');
+            root.classList.remove('pagent-hide-process');
+            root.style.removeProperty('--pagent-avatar');
+            root.style.removeProperty('--pagent-name');
+            root.style.removeProperty('--pagent-avatar-bg');
+            root.style.removeProperty('--pagent-avatar-color');
+          }
           setHost(null);
         };
       }, [sessionId, group === null ? '' : group.sessionId, identity === null ? '' : identity.id, thinking]);
@@ -3357,6 +3804,8 @@ window.__ModuleLoader__.load({
     /** Client entry: dictionaries, chrome, brand, panel, and identity list. */
     return {
       inject: ['slots', 'locale'],
+      /** Pure group-composer `@` picker logic, exported for the node test suite. */
+      __mentions: { mentionTokenAt, mentionCandidates, applyMention },
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en: EN, zh: ZH }), 'personal-agent: dictionaries');
 
@@ -3409,9 +3858,50 @@ window.__ModuleLoader__.load({
               if (!workspaceIds.has(workspace.workspaceId)) continue;
               for (const sessionId of workspace.sessionIds ?? []) sessionIds.add(sessionId);
             }
+            // Identity and group homes keep their conversations out of every
+            // project. Sessions can be detached from their home workspace (for
+            // example legacy group conversations renamed after a group), so
+            // hide by working directory as well, not only by workspace member
+            // lists; otherwise those rows leak into the Ungrouped bucket.
+            const personalDirs = new Set();
+            const addPersonalHome = (path) => {
+              if (typeof path !== 'string') return;
+              const match = /^(.*)\/(identities|groups)\/[^/]+\/home$/.exec(path);
+              if (match === null) return;
+              personalDirs.add(`${match[1]}/identities/`);
+              personalDirs.add(`${match[1]}/groups/`);
+            };
+            for (const identity of state?.identities ?? []) addPersonalHome(identity.home?.path);
+            for (const group of state?.groups ?? []) addPersonalHome(group.home);
+            const insidePersonal = (cwd) => {
+              if (typeof cwd !== 'string' || cwd === '') return false;
+              for (const dir of personalDirs) if (cwd === dir.slice(0, -1) || cwd.startsWith(dir)) return true;
+              return false;
+            };
+            const summaries = ctx.get('sessions')?.list.getSnapshot?.()?.byId ?? {};
+            const personalSessions = new Set();
+            for (const [id, summary] of Object.entries(summaries)) {
+              if (insidePersonal(summary?.cwd)) personalSessions.add(id);
+            }
             const rules = [];
             for (const id of workspaceIds) rules.push(`[data-row-key="workspace:${escapeKey(id)}"]{display:none!important}`);
             for (const id of sessionIds) rules.push(`[data-row-key="session:${escapeKey(id)}"]{display:none!important}`);
+            for (const id of personalSessions) rules.push(`[data-row-key="session:${escapeKey(id)}"]{display:none!important}`);
+            // The Ungrouped bucket only exists for Sessions outside every
+            // Workspace. When all of them are identity/group conversations the
+            // bucket is wholly ours and is hidden too, so the browser shows no
+            // empty group header left behind.
+            const accounted = new Set();
+            for (const workspace of snapshot?.items ?? []) for (const id of workspace.sessionIds ?? []) accounted.add(id);
+            const strays = Object.keys(summaries).filter((id) => !accounted.has(id));
+            const renderable = strays.filter((id) => {
+              const summary = summaries[id];
+              if (summary === undefined) return false;
+              if (summary.origin === 'subagent') return false;
+              if (summary.blank === true) return false;
+              return true;
+            });
+            if (renderable.length > 0 && renderable.every((id) => personalSessions.has(id))) rules.push('[data-row-key="workspace:"]{display:none!important}');
             tag.textContent = rules.join('\n');
           };
           const disposers = [store.subscribe(sync)];
@@ -3503,13 +3993,13 @@ window.__ModuleLoader__.load({
           ),
         );
 
-        // Passive progress strip in the composer dock. It also reports the
-        // current identity Session to the auto-switch poll.
-        ctx.slots.inject('conversation.composer.dock', () =>
+        // Working bubble above the composer. It also reports the current
+        // identity Session to the auto-switch poll.
+        ctx.slots.inject('conversation.input.dock', () =>
           ctx.slots.register(
             {
-              name: 'conversation.composer.dock',
-              id: 'personal-agent-progress',
+              name: 'conversation.input.dock',
+              id: 'personal-agent-working',
               order: 30,
               locale: NS,
               inject: (sessionId) => ({ sessionId }),

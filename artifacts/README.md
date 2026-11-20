@@ -15,9 +15,13 @@ Three tools, registered only in a Web profile:
 | `artifact_update` | Revise one: full `content`, or exact `edits` (`old_string` / `new_string` / `replace_all`) against the current text. Each write appends a version. |
 | `artifact_list` | List this chat's (or the project's) artifacts with ids, kinds, and versions. |
 
-A short system-prompt section tells the model to reach for an artifact when the
-deliverable is an interactive page, a diagram, a chart, a formatted document, or
-a substantial code sample, and to keep the chat reply to a summary.
+A short system-prompt section tells the model to reach for an artifact **on its
+own initiative** when the deliverable is an interactive page, a diagram, a
+chart, a formatted document, or a substantial code sample, and to keep the chat
+reply to two short sentences. You do not have to name the tool: "帮我做个番茄钟
+网页" or "把 Q1 12、Q2 18 做成柱状图" is enough. Borderline asks (a two-line
+diagram, a short table) may still be answered inline; say "放到画布里" when you
+want the canvas for certain.
 
 ## Artifact kinds
 

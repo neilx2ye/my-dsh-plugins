@@ -72,6 +72,8 @@ const FRESH_CONSUME_PATH = '/api/personal-agent/fresh/consume';
 const COMPACT_PATH = '/api/personal-agent/compact';
 /** Read a prior conversation's text for the display-only history block. */
 const TRANSCRIPT_PATH = '/api/personal-agent/transcript';
+/** Mark an identity or group as read. */
+const READ_PATH = '/api/personal-agent/read';
 
 /** Prompt section order just after the fixed Harness identity and before any preset persona. */
 const IDENTITY_SECTION_ORDER = -999;
@@ -645,6 +647,9 @@ export function apply(ctx, rawConfig) {
    */
   async function appendTranscript(group, message) {
     const key = groupKey(group);
+    if (message.role === 'assistant') {
+      unreadGroups.set(key, (unreadGroups.get(key) ?? 0) + 1);
+    }
     const previous = transcriptChains.get(key) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(async () => {
       const messages = readTranscript(group);
@@ -678,9 +683,25 @@ export function apply(ctx, rawConfig) {
       .trim();
   }
 
-  // A participant agent answers in its own Session. When that turn ends, copy
-  // its final visible answer into the group feed. The plugin, not another
-  // agent, is the relay, so no identity speaks for the others.
+  // Count unread assistant messages for identity and legacy-group Sessions.
+  // Multi-agent group replies are counted when they are appended to the feed.
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'assistant/message') return;
+    if (session.header.origin === 'subagent' || session.header.parentSession !== undefined) return;
+    if (event.surfaceOp === 'replace') return;
+    if (assistantText(event) === '') return;
+    const group = groups.get(session.id) ?? groupForCwd(session.header.cwd);
+    if (group !== undefined) {
+      if (Array.isArray(group.participantIds)) return;
+      unreadGroups.set(groupKey(group), (unreadGroups.get(groupKey(group)) ?? 0) + 1);
+      return;
+    }
+    const record = recordForCwd(session.header.cwd);
+    if (record === undefined) return;
+    unreadIdentities.set(record.identity.id, (unreadIdentities.get(record.identity.id) ?? 0) + 1);
+  });
+
+  // A participant agent answers in its own Session. When that turn ends, copy...
   ctx.on('session/event', (session, event) => {
     if (event.type !== 'turn/end') return;
     const queue = pendingReplies.get(session.id);
@@ -714,6 +735,9 @@ export function apply(ctx, rawConfig) {
   const freshSessions = new Map();
   /** Source conversation shown as display-only history for each fresh Session. */
   const freshSources = new Map();
+  /** Unread assistant messages by identity id and group key. */
+  const unreadIdentities = new Map();
+  const unreadGroups = new Map();
   try {
     if (existsSync(freshFile)) {
       const parsed = JSON.parse(readFileSync(freshFile, 'utf8'));
@@ -1465,6 +1489,7 @@ export function apply(ctx, rawConfig) {
                 name: group.name,
                 mode: 'multi',
                 participants,
+                unread: unreadGroups.get(groupKey(group)) ?? 0,
                 ...(typeof group.workspaceId === 'string' ? { workspaceId: group.workspaceId } : {}),
                 createdAt: group.createdAt,
               };
@@ -1476,11 +1501,13 @@ export function apply(ctx, rawConfig) {
               .map((guest) => ({ id: guest.id, name: guest.name, role: guest.role }));
             if (host === undefined || guests.length === 0) return null;
             return {
+              id: groupKey(group),
               sessionId: group.sessionId,
               name: group.name,
               mode: 'legacy',
               host: { id: host.id, name: host.name, role: host.role },
               guests,
+              unread: unreadGroups.get(groupKey(group)) ?? 0,
               ...(typeof group.workspaceId === 'string' ? { workspaceId: group.workspaceId } : {}),
               createdAt: group.createdAt,
             };
@@ -1514,6 +1541,7 @@ export function apply(ctx, rawConfig) {
             latestSessionId,
             freshSessionId,
             historySessionId,
+            unread: unreadIdentities.get(identity.id) ?? 0,
             memory: {
               path: record.paths.memoryFile,
               text: record.store.read(),
@@ -2264,6 +2292,37 @@ export function apply(ctx, rawConfig) {
           },
         }),
       'personal-agent: consume fresh conversation marker',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: READ_PATH,
+          methods: ['POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            if (typeof body.identityId === 'string' && body.identityId !== '') {
+              const record = records.find((candidate) => candidate.identity.id === body.identityId);
+              if (record === undefined) return failure(404, 'unknown-identity', `no identity "${body.identityId}"`);
+              unreadIdentities.delete(record.identity.id);
+              return json({ ok: true, identityId: record.identity.id });
+            }
+            if (typeof body.groupId === 'string' && body.groupId !== '') {
+              const group = [...groups.values()].find((candidate) => groupKey(candidate) === body.groupId);
+              if (group === undefined) return failure(404, 'unknown-group', `no group "${body.groupId}"`);
+              unreadGroups.delete(groupKey(group));
+              return json({ ok: true, groupId: groupKey(group) });
+            }
+            return failure(400, 'invalid-target', 'identityId or groupId is required');
+          },
+        }),
+      'personal-agent: mark read route',
     );
 
     scope.effect(

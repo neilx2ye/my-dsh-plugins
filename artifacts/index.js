@@ -614,7 +614,7 @@ export function apply(ctx, config) {
           text: ({ scope }) =>
             ctx.tools.get('artifact_create', scope) === undefined
               ? ''
-              : 'Artifacts: when a deliverable is a self-contained visual document (interactive HTML page, SVG diagram, chart, Mermaid diagram, formatted Markdown report, or a substantial code sample meant to be read), create it with artifact_create and keep the chat reply to a short summary — do not paste the whole document into the transcript. Revise it with artifact_update (or exact edits) instead of creating a duplicate, and use artifact_list to find an existing id. Do not use artifacts for short snippets, ordinary prose, or files the user asked to save in the repository; write those directly.',
+              : 'Artifacts: create one with artifact_create on your own initiative whenever the deliverable is visual, interactive, diagrammed, charted, or long-form — the user does NOT need to name the tool. Typical triggers: a web page, app, widget, or demo; a flow, architecture, or sequence diagram; a chart built from data; a formatted report, plan, or release note longer than a couple of paragraphs; a substantial code sample meant for reading. Keep the chat reply to at most two short sentences (what it is, one next step) and do not paste the document into the transcript. Revise an existing artifact with artifact_update (whole content or exact edits) instead of creating a duplicate, and use artifact_list to find its id. Do not use an artifact for a short snippet, a brief inline answer, or a file the user asked to save in the repository — write those directly.',
         }),
       'dsh-artifacts: prompt section',
     );
