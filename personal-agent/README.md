@@ -328,6 +328,16 @@ written to the group transcript (`transcript.json`) as each participant's turn
 ends and appear under that identity's avatar and name. The page polls the
 transcript and marks participants that are still replying.
 
+A message can also carry images. Use the picture button, paste an image into
+the composer, or drop files onto it; up to six PNG/JPEG/WebP/GIF files are
+accepted per message. The composer downscales a large image to fit the Host's
+per-image budget before sending. The Host validates the bytes, stores them under
+the group's own directory (`personal-agent/groups/<groupId>/images/`), shows
+thumbnails in the feed, and passes the images to every addressed participant as
+image parts of its prompt. Only the current message's images are attached to a
+prompt; older images appear in later history as `[N 张图片]` so a long-running
+group does not resend every past image.
+
 Group rows appear under `群聊` in the identity module. Hover a row for the
 rename (`✎`) and close (`×`) actions. Renaming updates the group name and its
 hidden workspace title. Closing archives every participant Session and removes

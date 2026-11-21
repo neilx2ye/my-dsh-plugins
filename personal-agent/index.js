@@ -28,7 +28,7 @@
 
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { mkdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
@@ -66,6 +66,8 @@ const GROUP_RENAME_PATH = '/api/personal-agent/group/rename';
 const GROUP_SEND_PATH = '/api/personal-agent/group/send';
 /** Read a multi-agent group's transcript and participant status. */
 const GROUP_STATE_PATH = '/api/personal-agent/group/state';
+/** Read one image attached to a multi-agent group message. */
+const GROUP_IMAGE_PATH = '/api/personal-agent/group/image';
 /** Acknowledge the fresh conversation auto-switch; clears the pending marker. */
 const FRESH_CONSUME_PATH = '/api/personal-agent/fresh/consume';
 /** Compact the forked transcript after a fresh-conversation switch. */
@@ -86,6 +88,20 @@ const SUBAGENT_PROVIDER = 'spawn';
 
 /** Name of the agent preset this bundle declares. */
 const PRESET_ID = 'personal';
+
+/** Image media types a group message may carry, with their file extension. */
+const GROUP_IMAGE_TYPES = new Map([
+  ['image/png', 'png'],
+  ['image/jpeg', 'jpg'],
+  ['image/webp', 'webp'],
+  ['image/gif', 'gif'],
+]);
+/** Most images one group message may carry. */
+const GROUP_IMAGE_MAX_COUNT = 6;
+/** Largest encoded image one group message may carry. */
+const GROUP_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+/** Largest combined encoded image payload one group message may carry. */
+const GROUP_IMAGE_MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 
 /**
  * Resolve the DSH home the same way the launcher does: `$DSH_HOME`, then
@@ -197,6 +213,102 @@ async function readObjectBody(request) {
     throw new Error('request body must be a JSON object');
   }
   return value;
+}
+
+/**
+ * Decide whether encoded bytes really are the declared image type. This keeps
+ * arbitrary bytes out of the group transcript and the participant prompt.
+ * @param bytes - decoded image bytes.
+ * @param mediaType - declared media type.
+ * @returns whether the magic bytes match.
+ */
+function imageBytesMatchMediaType(bytes, mediaType) {
+  if (!(bytes instanceof Uint8Array)) return false;
+  const starts = (...signature) => signature.every((value, index) => bytes[index] === value);
+  if (mediaType === 'image/png') return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  if (mediaType === 'image/jpeg') return starts(0xff, 0xd8, 0xff);
+  if (mediaType === 'image/gif') return starts(0x47, 0x49, 0x46, 0x38);
+  if (mediaType === 'image/webp') {
+    return starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+  }
+  return false;
+}
+
+/**
+ * Build the prompt content parts for one group participant: the text prompt
+ * first, then every image as an image part the Host admits into the Session.
+ * @param prompt - participant prompt text.
+ * @param images - normalized images from normalizeGroupImages.
+ * @returns prompt content parts.
+ */
+function promptContent(prompt, images) {
+  const content = [{ type: 'text', text: prompt }];
+  for (const image of images) {
+    content.push({
+      type: 'image',
+      mediaType: image.mediaType,
+      data: image.data,
+      ...(typeof image.name === 'string' && image.name !== '' ? { name: image.name } : {}),
+    });
+  }
+  return content;
+}
+
+/**
+ * Validate and decode the images a browser submitted with one group message.
+ * A data: URL prefix is accepted so the composer can send a FileReader result
+ * unchanged.
+ * @param value - request `images` field.
+ * @returns normalized images with `data` (base64), `extension`, and byte size.
+ */
+function normalizeGroupImages(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new Error('images must be an array');
+  if (value.length > GROUP_IMAGE_MAX_COUNT) {
+    throw new Error(`a message can carry at most ${GROUP_IMAGE_MAX_COUNT} images`);
+  }
+  const images = [];
+  let total = 0;
+  for (const entry of value) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error('every image must be an object');
+    }
+    const mediaType = typeof entry.mediaType === 'string' ? entry.mediaType.trim().toLowerCase() : '';
+    const extension = GROUP_IMAGE_TYPES.get(mediaType);
+    if (extension === undefined) throw new Error(`unsupported image type "${mediaType}"`);
+    let data = typeof entry.data === 'string' ? entry.data.trim() : '';
+    const comma = data.startsWith('data:') ? data.indexOf(',') : -1;
+    if (comma !== -1) data = data.slice(comma + 1);
+    data = data.replace(/\s+/g, '');
+    if (data === '' || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) {
+      throw new Error('image data must be base64');
+    }
+    const bytes = Buffer.from(data, 'base64');
+    if (bytes.byteLength === 0) throw new Error('image data is empty');
+    if (bytes.byteLength > GROUP_IMAGE_MAX_BYTES) {
+      throw new Error(`an image can be at most ${GROUP_IMAGE_MAX_BYTES} bytes`);
+    }
+    if (!imageBytesMatchMediaType(bytes, mediaType)) {
+      throw new Error(`image data does not match ${mediaType}`);
+    }
+    total += bytes.byteLength;
+    if (total > GROUP_IMAGE_MAX_TOTAL_BYTES) throw new Error('the message carries too many image bytes');
+    const name = typeof entry.name === 'string' ? entry.name.trim().slice(0, 200) : '';
+    const dimension = (candidate) => (Number.isSafeInteger(candidate) && candidate > 0 && candidate <= 65535 ? candidate : undefined);
+    const width = dimension(entry.width);
+    const height = dimension(entry.height);
+    images.push({
+      id: `image-${randomUUID()}`,
+      mediaType,
+      extension,
+      data,
+      name,
+      ...(width === undefined ? {} : { width }),
+      ...(height === undefined ? {} : { height }),
+      bytes: bytes.byteLength,
+    });
+  }
+  return images;
 }
 
 /**
@@ -609,6 +721,67 @@ export function apply(ctx, rawConfig) {
   }
 
   /**
+   * Directory holding one group's message images.
+   * @param group - group record.
+   * @returns absolute directory path.
+   */
+  function groupImagesDir(group) {
+    return join(groupsRoot, groupKey(group), 'images');
+  }
+
+  /**
+   * Persist the images attached to one user message. The transcript only holds
+   * metadata, so status polling never repeats image bytes.
+   * @param group - group record.
+   * @param images - normalized images from normalizeGroupImages.
+   * @returns stored image metadata for the transcript.
+   */
+  async function storeGroupImages(group, images) {
+    if (images.length === 0) return [];
+    const directory = groupImagesDir(group);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const stored = [];
+    for (const image of images) {
+      await writeFile(join(directory, `${image.id}.${image.extension}`), Buffer.from(image.data, 'base64'), { mode: 0o600 });
+      stored.push({
+        id: image.id,
+        mediaType: image.mediaType,
+        ...(image.name === '' ? {} : { name: image.name }),
+        ...(image.width === undefined ? {} : { width: image.width }),
+        ...(image.height === undefined ? {} : { height: image.height }),
+        bytes: image.bytes,
+      });
+    }
+    return stored;
+  }
+
+  /**
+   * Shape one transcript message for the browser: image bytes stay on disk and
+   * each image becomes a same-origin URL the feed can render.
+   * @param group - group record.
+   * @param message - transcript message.
+   * @returns the browser-safe message.
+   */
+  function publicGroupMessage(group, message) {
+    const images = Array.isArray(message?.images)
+      ? message.images.filter((image) => image !== null && typeof image === 'object' && typeof image.id === 'string')
+      : [];
+    if (images.length === 0) return message;
+    const groupId = encodeURIComponent(groupKey(group));
+    return {
+      ...message,
+      images: images.map((image) => ({
+        id: image.id,
+        ...(image.name === undefined ? {} : { name: image.name }),
+        mediaType: image.mediaType,
+        ...(image.width === undefined ? {} : { width: image.width }),
+        ...(image.height === undefined ? {} : { height: image.height }),
+        url: `${GROUP_IMAGE_PATH.replace(/^\/+/, '')}?groupId=${groupId}&imageId=${encodeURIComponent(image.id)}`,
+      })),
+    };
+  }
+
+  /**
    * Read one group transcript.
    * @param group - group record.
    * @returns messages oldest first.
@@ -631,9 +804,23 @@ export function apply(ctx, rawConfig) {
    */
   async function writeTranscript(group, messages) {
     const bounded = messages.slice(-400);
+    const dropped = messages.slice(0, Math.max(0, messages.length - bounded.length));
     const file = transcriptFile(group);
     await mkdir(dirname(file), { recursive: true, mode: 0o700 });
     await writeFile(file, `${JSON.stringify({ version: 1, messages: bounded }, null, 2)}\n`, { mode: 0o600 });
+    if (dropped.length === 0) return;
+    // Images of messages that fell out of the bounded feed are unreachable, so
+    // remove their files best-effort instead of accumulating them forever.
+    const directory = groupImagesDir(group);
+    const stale = dropped
+      .flatMap((message) => (Array.isArray(message?.images) ? message.images : []))
+      .filter((image) => image !== null && typeof image === 'object' && typeof image.id === 'string')
+      .map((image) => {
+        const extension = GROUP_IMAGE_TYPES.get(image.mediaType);
+        return extension === undefined ? undefined : join(directory, `${image.id}.${extension}`);
+      })
+      .filter((path) => path !== undefined);
+    await Promise.allSettled(stale.map((path) => unlink(path)));
   }
 
   /** Per-group write chains so parallel replies cannot overwrite each other. */
@@ -1994,23 +2181,35 @@ export function apply(ctx, rawConfig) {
      * @param text - user message.
      * @param history - messages before this user message.
      * @param addressed - whether the user named this identity.
+     * @param images - images attached to this user message.
      * @returns prompt text.
      */
-    function participantPrompt(group, identity, text, history, addressed) {
+    function participantPrompt(group, identity, text, history, addressed, images = []) {
       const participants = group.participantIds
         .map((id) => records.find((record) => record.identity.id === id)?.identity)
         .filter((participant) => participant !== undefined);
       const transcript = history
         .slice(-40)
-        .map((message) => (message.role === 'user' ? `用户：${message.text}` : `${message.name ?? '参与者'}：${message.text}`))
+        .map((message) => {
+          if (message.role !== 'user') return `${message.name ?? '参与者'}：${message.text}`;
+          const attachment = Array.isArray(message.images) && message.images.length > 0
+            ? `[${message.images.length} 张图片]`
+            : '';
+          const body = typeof message.text === 'string' ? message.text : '';
+          return `用户：${[body, attachment].filter((part) => part !== '').join(' ')}`;
+        })
         .join('\n')
         .slice(-20000);
+      const attachmentLine = images.length === 0
+        ? ''
+        : `用户这条消息还附了 ${images.length} 张图片，图片就在下面，请直接看图片内容。`;
       return [
         `你正在参加群聊「${group.name}」。参与者：${participants.map((participant) => participant.name).join('、')}。`,
         `你是 ${identity.name}。这是一次群聊，没有主持或主智能体；每位参与者看到用户消息后各自回复。只代表你自己，不要替其他人说话。`,
         addressed ? `用户在这条消息里点名了你，请优先回答用户要你做的事。` : '',
         transcript === '' ? '' : `最近的群聊记录：\n${transcript}`,
-        `用户刚刚说：\n${text}`,
+        `用户刚刚说：\n${text === '' ? '（用户这条消息只有图片，没有文字。）' : text}`,
+        attachmentLine,
         `请以 ${identity.name} 的身份，直接回复群聊。保持简洁，不要写“作为群成员”之类的元叙述。`,
       ]
         .filter((line) => line !== '')
@@ -2057,7 +2256,7 @@ export function apply(ctx, rawConfig) {
             return json({
               ok: true,
               group: { id: group.id, name: group.name, participants, createdAt: group.createdAt },
-              messages: readTranscript(group),
+              messages: readTranscript(group).map((message) => publicGroupMessage(group, message)),
             });
           },
         }),
@@ -2083,18 +2282,33 @@ export function apply(ctx, rawConfig) {
               return failure(404, 'unknown-group', `no multi-agent group "${groupId}"`);
             }
             const text = typeof body.text === 'string' ? body.text.trim() : '';
-            if (text === '') return failure(400, 'empty-message', 'a group message needs text');
+            let images;
+            try {
+              images = normalizeGroupImages(body.images);
+            } catch (error) {
+              return failure(400, 'invalid-image', messageOf(error));
+            }
+            if (text === '' && images.length === 0) {
+              return failure(400, 'empty-message', 'a group message needs text or an image');
+            }
             const controller = ctx.get('sessionController');
             if (controller === undefined || typeof controller.prompt !== 'function') {
               return failure(409, 'session-controller-unavailable', 'this Host cannot prompt a group participant');
             }
             const history = readTranscript(group);
             const targets = addressedParticipants(group, text, body.mentions);
+            let storedImages;
+            try {
+              storedImages = await storeGroupImages(group, images);
+            } catch (error) {
+              return failure(500, 'image-store-failed', messageOf(error));
+            }
             const message = {
               id: `message-${randomUUID()}`,
               role: 'user',
               text,
               time: new Date().toISOString(),
+              ...(storedImages.length === 0 ? {} : { images: storedImages }),
             };
             await appendTranscript(group, message);
             const failures = [];
@@ -2106,15 +2320,16 @@ export function apply(ctx, rawConfig) {
                   failures.push({ identityId, message: 'participant has no Session' });
                   return;
                 }
-                const prompt = participantPrompt(group, identity, text, history, targets.length < group.participantIds.length);
+                const prompt = participantPrompt(group, identity, text, history, targets.length < group.participantIds.length, images);
                 const queue = pendingReplies.get(sessionId) ?? [];
                 const startSeq = ctx.get('sessions')?.get?.(sessionId)?.log?.length ?? 0;
                 const pendingEntry = { groupId, identityId, startSeq };
                 queue.push(pendingEntry);
                 pendingReplies.set(sessionId, queue);
+                const content = promptContent(prompt, images);
                 try {
                   await controller.prompt(
-                    { sessionId, content: [{ type: 'text', text: prompt }], requestId: `group-${randomUUID()}` },
+                    { sessionId, content, requestId: `group-${randomUUID()}` },
                     AbortSignal.timeout(30000),
                   );
                 } catch (error) {
@@ -2128,10 +2343,57 @@ export function apply(ctx, rawConfig) {
                 }
               }),
             );
-            return json({ ok: true, message, targets, failures });
+            return json({ ok: true, message: publicGroupMessage(group, message), targets, failures });
           },
         }),
       'personal-agent: group send route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: GROUP_IMAGE_PATH,
+          methods: ['GET'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            const params = new URL(request.url, 'http://localhost').searchParams;
+            const groupId = params.get('groupId') ?? '';
+            const imageId = params.get('imageId') ?? '';
+            const group = groups.get(groupId);
+            if (group === undefined || !Array.isArray(group.participantIds)) {
+              return failure(404, 'unknown-group', `no multi-agent group "${groupId}"`);
+            }
+            if (!/^image-[0-9a-f-]{36}$/i.test(imageId)) {
+              return failure(400, 'invalid-image', 'imageId must name one message image');
+            }
+            const message = readTranscript(group).find(
+              (candidate) => Array.isArray(candidate.images)
+                && candidate.images.some((image) => image !== null && typeof image === 'object' && image.id === imageId),
+            );
+            const image = message?.images?.find(
+              (candidate) => candidate !== null && typeof candidate === 'object' && candidate.id === imageId,
+            );
+            const extension = image === undefined ? undefined : GROUP_IMAGE_TYPES.get(image.mediaType);
+            if (image === undefined || extension === undefined) {
+              return failure(404, 'unknown-image', `no image "${imageId}" in this group`);
+            }
+            try {
+              const bytes = await readFile(join(groupImagesDir(group), `${image.id}.${extension}`));
+              return new Response(bytes, {
+                status: 200,
+                headers: {
+                  'content-type': image.mediaType,
+                  'content-length': String(bytes.byteLength),
+                  'cache-control': 'private, max-age=31536000, immutable',
+                  'x-content-type-options': 'nosniff',
+                },
+              });
+            } catch (error) {
+              return failure(404, 'image-unavailable', messageOf(error));
+            }
+          },
+        }),
+      'personal-agent: group image route',
     );
 
     scope.effect(
@@ -2487,3 +2749,6 @@ export function apply(ctx, rawConfig) {
     );
   });
 }
+
+/** Pure group-image helpers, exported for the node test suite. */
+export const __groupImages = { imageBytesMatchMediaType, normalizeGroupImages, promptContent, GROUP_IMAGE_TYPES, GROUP_IMAGE_MAX_COUNT, GROUP_IMAGE_MAX_BYTES };

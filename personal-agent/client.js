@@ -47,6 +47,16 @@ window.__ModuleLoader__.load({
     const GROUP_STATE_URL = 'api/personal-agent/group/state';
     /** Post one message to a multi-agent group. */
     const GROUP_SEND_URL = 'api/personal-agent/group/send';
+    /** Image types the group composer accepts. */
+    const GROUP_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+    /** Most images one group message may carry. */
+    const GROUP_IMAGE_MAX_COUNT = 6;
+    /** Largest encoded image the Host accepts. */
+    const GROUP_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+    /** Largest original file the composer will read before downscaling. */
+    const GROUP_IMAGE_MAX_INPUT_BYTES = 20 * 1024 * 1024;
+    /** Longest edge kept after downscaling. */
+    const GROUP_IMAGE_MAX_EDGE = 4096;
     /** Main-panel key for the group feed. */
     const GROUP_PANEL_ID = 'personal-agent-group';
     /** Clear the pending fresh-conversation marker after auto-switching. */
@@ -217,8 +227,16 @@ window.__ModuleLoader__.load({
       'groups.empty': 'Select a group from the identity module.',
       'groups.emptyFeed': 'No messages yet. Say something to the group.',
       'groups.composePlaceholder': 'Message the group… every participant replies unless you @mention one',
-      'groups.mentionHint': 'Everyone answers by default — type @ to pick one member',
+      'groups.mentionHint': 'Everyone answers by default — type @ to pick one member; paste or drop images',
       'groups.mentionPick': 'Pick a member to @',
+      'groups.attachImage': 'Add images',
+      'groups.imageHint': 'PNG, JPEG, WebP, or GIF · up to {count} per message',
+      'groups.imageLimit': 'A message can include at most {count} images.',
+      'groups.imageUnsupported': 'That file is not a supported image (PNG, JPEG, WebP, or GIF).',
+      'groups.imageTooLarge': 'That image is too large (up to {size} MB).',
+      'groups.imageFailed': 'Could not add the image: {message}',
+      'groups.removeImage': 'Remove image',
+      'groups.preparingImages': 'Preparing images…',
       'groups.send': 'Send',
       'groups.sending': 'Sending…',
       'groups.sendFailed': 'Could not send: {message}',
@@ -358,8 +376,16 @@ window.__ModuleLoader__.load({
       'groups.empty': '从身份模块选择一个群聊。',
       'groups.emptyFeed': '还没有消息，直接对群里说点什么。',
       'groups.composePlaceholder': '发到群里…默认所有身份都会回复，用 @名字 只叫某一位',
-      'groups.mentionHint': '默认发给所有成员，输入 @ 可点名某一位',
+      'groups.mentionHint': '默认发给所有成员，输入 @ 可点名某一位；可粘贴或拖入图片',
       'groups.mentionPick': '选择要 @ 的成员',
+      'groups.attachImage': '添加图片',
+      'groups.imageHint': 'PNG、JPEG、WebP、GIF · 每条最多 {count} 张',
+      'groups.imageLimit': '一条消息最多 {count} 张图片。',
+      'groups.imageUnsupported': '不支持这种图片格式（PNG、JPEG、WebP、GIF）。',
+      'groups.imageTooLarge': '这张图片太大了（最大 {size} MB）。',
+      'groups.imageFailed': '添加图片失败：{message}',
+      'groups.removeImage': '移除图片',
+      'groups.preparingImages': '正在处理图片…',
       'groups.send': '发送',
       'groups.sending': '发送中…',
       'groups.sendFailed': '发送失败：{message}',
@@ -599,6 +625,21 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 .pagent-group-composer{position:relative;display:flex;flex-direction:column;gap:8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);padding:10px 12px}
 .pagent-group-input{width:100%;resize:vertical;min-height:56px;max-height:220px;background:transparent;border:0;outline:0;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:1.6}
 .pagent-group-input::placeholder{color:var(--dsw-alias-label-tertiary)}
+.pagent-group-message-images{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.pagent-group-message-image-link{display:block;line-height:0;border-radius:10px;overflow:hidden;border:.5px solid var(--dsw-alias-border-l2)}
+.pagent-group-message-image{display:block;max-width:220px;max-height:220px;width:auto;height:auto;object-fit:cover}
+.pagent-group-attachments{display:flex;flex-wrap:wrap;gap:8px}
+.pagent-group-attachment{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
+.pagent-group-attachment img{display:block;width:100%;height:100%;object-fit:cover}
+.pagent-group-attachment-remove{position:absolute;top:3px;right:3px;display:grid;place-items:center;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.pagent-group-attachment-remove:hover{background:rgba(0,0,0,.82)}
+.pagent-group-file{display:none}
+.pagent-group-composer[data-dragover="true"]{border-color:var(--dsw-alias-brand-primary);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 8%,var(--dsw-alias-bg-layer-1))}
+.pagent-group-composer-tools{display:flex;align-items:center;gap:8px;min-width:0}
+.pagent-group-attach{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background .12s ease,color .12s ease}
+.pagent-group-attach:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
+.pagent-group-attach:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.pagent-group-attach:disabled{cursor:default;opacity:.5}
 .pagent-group-composer-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .pagent-group-composer-hint{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pagent-group-mentions{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);z-index:30;display:flex;flex-direction:column;gap:2px;box-sizing:border-box;max-height:224px;overflow-y:auto;padding:4px;border:.5px solid var(--dsw-alias-border-l1);border-radius:11px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 14px 38px rgba(0,0,0,.36);scrollbar-gutter:stable}
@@ -609,11 +650,12 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 .pagent-group-mention-copy{display:flex;flex-direction:column;gap:0;min-width:0;flex:1}
 .pagent-group-mention-name{font-size:12.5px;line-height:1.4;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pagent-group-mention-role{font-size:10.5px;line-height:1.4;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (max-width:640px){.pagent-group-page{padding:12px}.pagent-group-page-name{font-size:14px}.pagent-group-composer-hint{display:none}}
+@media (max-width:640px){.pagent-group-page{padding:12px}.pagent-group-page-name{font-size:14px}.pagent-group-composer-hint{display:none}.pagent-group-message-image{max-width:min(220px,62vw)}}
 @media (hover:none){.pagent-group-delete,.pagent-group-rename{opacity:.65}}
 .pagent-group-row{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:36px;padding:4px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;min-width:0}
 .pagent-group-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
 .pagent-group-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.pagent-group-row[data-active="true"]{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
 .pagent-group-glyph{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
 .pagent-group-copy{display:flex;flex-direction:column;gap:0;min-width:0;flex:1}
 .pagent-dialog-mask{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.5)}
@@ -1497,6 +1539,192 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
     }
 
     /**
+     * Normalize one browser-declared image MIME type to a type the Host accepts.
+     * Browsers disagree about `image/jpg`, so it is folded into `image/jpeg`.
+     * @param {unknown} value - `File.type` value.
+     * @returns {string | null} supported media type, or null.
+     */
+    function groupImageMediaType(value) {
+      if (typeof value !== 'string') return null;
+      const normalized = value.trim().toLowerCase();
+      const canonical = normalized === 'image/jpg' ? 'image/jpeg' : normalized;
+      return GROUP_IMAGE_TYPES.includes(canonical) ? canonical : null;
+    }
+
+    /**
+     * Strip the metadata prefix from one data URL.
+     * @param {string} dataUrl - `data:<type>;base64,<bytes>`.
+     * @returns {string} base64 payload.
+     */
+    function imageBase64Of(dataUrl) {
+      if (typeof dataUrl !== 'string') return '';
+      const comma = dataUrl.indexOf(',');
+      return comma === -1 ? dataUrl : dataUrl.slice(comma + 1);
+    }
+
+    /**
+     * Build one tagged composer error so the caller can localize it.
+     * @param {string} code - stable error code.
+     * @returns {Error} tagged error.
+     */
+    function groupImageError(code) {
+      const error = new Error(code);
+      error.code = code;
+      return error;
+    }
+
+    /**
+     * Mint a draft-local id for one composer image.
+     * @returns {string} draft image id.
+     */
+    function groupImageId() {
+      return `draft-image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    /**
+     * Read one image File as a data URL.
+     * @param {File} file - browser file.
+     * @returns {Promise<string>} data URL.
+     */
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(reader.error ?? groupImageError('unreadable'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    /**
+     * Decode one data URL into an HTML image element.
+     * @param {string} dataUrl - image data URL.
+     * @returns {Promise<HTMLImageElement>} decoded image.
+     */
+    function decodeGroupImage(dataUrl) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(groupImageError('unreadable'));
+        image.src = dataUrl;
+      });
+    }
+
+    /**
+     * Estimate the decoded byte length of a data URL payload.
+     * @param {string} dataUrl - data URL.
+     * @returns {number} approximate bytes.
+     */
+    function imageBytesOf(dataUrl) {
+      const payload = imageBase64Of(dataUrl);
+      const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
+      return Math.max(0, Math.floor((payload.length * 3) / 4) - padding);
+    }
+
+    /**
+     * Draw one decoded image to a canvas at a scale, then encode it.
+     * @param {HTMLImageElement} image - decoded image.
+     * @param {string} mediaType - target media type.
+     * @param {number} scale - scale factor.
+     * @returns {{ dataUrl: string, width: number, height: number }} encoded image.
+     */
+    function renderGroupImage(image, mediaType, scale) {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (context === null) throw groupImageError('encode-failed');
+      if (mediaType === 'image/jpeg') {
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, height);
+      }
+      context.drawImage(image, 0, 0, width, height);
+      // `toDataURL` uses 0.9 quality for lossy types and ignores it for PNG.
+      return { dataUrl: canvas.toDataURL(mediaType, 0.9), width, height };
+    }
+
+    /**
+     * Read, validate, and (only when necessary) downscale one image so it fits
+     * the Host's per-image budget. GIFs are kept animated and never re-encoded.
+     * @param {File} file - browser file.
+     * @returns {Promise<{ mediaType: string, data: string, name: string, width: number, height: number, previewUrl: string }>} prepared image.
+     */
+    async function prepareGroupImage(file) {
+      const mediaType = groupImageMediaType(file.type);
+      if (mediaType === null) throw groupImageError('unsupported');
+      if (file.size > GROUP_IMAGE_MAX_INPUT_BYTES) throw groupImageError('input-too-large');
+      const dataUrl = await readFileAsDataUrl(file);
+      if (dataUrl === '') throw groupImageError('unreadable');
+      const image = await decodeGroupImage(dataUrl);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!(width > 0) || !(height > 0)) throw groupImageError('unreadable');
+      if (
+        imageBytesOf(dataUrl) <= GROUP_IMAGE_MAX_BYTES
+        && width <= GROUP_IMAGE_MAX_EDGE
+        && height <= GROUP_IMAGE_MAX_EDGE
+      ) {
+        return { id: groupImageId(), mediaType, data: imageBase64Of(dataUrl), name: file.name, width, height, previewUrl: dataUrl };
+      }
+      if (mediaType === 'image/gif') throw groupImageError('gif-too-large');
+      let targetType = mediaType === 'image/png' ? 'image/png' : 'image/jpeg';
+      let scale = Math.min(1, GROUP_IMAGE_MAX_EDGE / Math.max(width, height));
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const rendered = renderGroupImage(image, targetType, scale);
+        if (imageBytesOf(rendered.dataUrl) <= GROUP_IMAGE_MAX_BYTES) {
+          return {
+            id: groupImageId(),
+            mediaType: targetType,
+            data: imageBase64Of(rendered.dataUrl),
+            name: file.name,
+            width: rendered.width,
+            height: rendered.height,
+            previewUrl: rendered.dataUrl,
+          };
+        }
+        // PNG with alpha can stay heavy at small sizes; JPEG wins eventually.
+        if (attempt >= 3) targetType = 'image/jpeg';
+        scale = Math.max(0.1, scale * 0.75);
+      }
+      throw groupImageError('encode-failed');
+    }
+
+    /**
+     * Localize one composer image failure.
+     * @param {(key: string, vars?: object) => string} tr - translator.
+     * @param {unknown} error - thrown value.
+     * @returns {string} readable message.
+     */
+    function imageErrorText(tr, error) {
+      if (error?.code === 'unsupported') return tr('groups.imageUnsupported');
+      if (error?.code === 'input-too-large') {
+        return tr('groups.imageTooLarge', { size: Math.floor(GROUP_IMAGE_MAX_INPUT_BYTES / (1024 * 1024)) });
+      }
+      if (error?.code === 'gif-too-large') {
+        return tr('groups.imageTooLarge', { size: Math.floor(GROUP_IMAGE_MAX_BYTES / (1024 * 1024)) });
+      }
+      if (error?.code === 'count') return tr('groups.imageLimit', { count: GROUP_IMAGE_MAX_COUNT });
+      return tr('groups.imageFailed', { message: messageOf(error) });
+    }
+
+    /**
+     * Resolve one document-relative media route against the page base.
+     * @param {unknown} value - route from the Host.
+     * @returns {string} absolute URL usable by `img` and `a`.
+     */
+    function imageHref(value) {
+      if (typeof value !== 'string' || value === '') return '';
+      try {
+        return new URL(value, document.baseURI).href;
+      } catch {
+        return value;
+      }
+    }
+
+    /**
      * Build the multi-agent group feed page. Every participant is its own
      * agent; the page shows one merged feed and never inserts a host voice.
      * @param ctx - client plugin context.
@@ -1509,12 +1737,24 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
         const group = state?.groups?.find((candidate) => candidate.mode === 'multi' && candidate.id === activeGroupId) ?? null;
         const [feed, setFeed] = React.useState(null);
         const [draft, setDraft] = React.useState('');
+        const [images, setImages] = React.useState([]);
+        const [preparingImages, setPreparingImages] = React.useState(false);
+        const [dragging, setDragging] = React.useState(false);
         const [sending, setSending] = React.useState(false);
         const [failure, setFailure] = React.useState(null);
         /** Live `@` picker: token span under the caret plus the highlighted row. */
         const [mention, setMention] = React.useState(null);
         const feedRef = React.useRef(null);
         const inputRef = React.useRef(null);
+        const fileRef = React.useRef(null);
+        const imagesRef = React.useRef(images);
+        const mountedRef = React.useRef(true);
+        React.useEffect(() => {
+          imagesRef.current = images;
+        }, [images]);
+        React.useEffect(() => () => {
+          mountedRef.current = false;
+        }, []);
 
         const groupId = group?.id ?? null;
         React.useEffect(() => {
@@ -1606,9 +1846,45 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
           });
         };
 
+        const addImages = async (files) => {
+          if (sending) return;
+          const provided = [...(files ?? [])];
+          const candidates = provided.filter((file) => file !== null && typeof file === 'object' && groupImageMediaType(file.type) !== null);
+          if (candidates.length === 0) {
+            if (provided.length > 0) setFailure(imageErrorText(tr, groupImageError('unsupported')));
+            return;
+          }
+          const room = GROUP_IMAGE_MAX_COUNT - imagesRef.current.length;
+          if (room <= 0) {
+            setFailure(imageErrorText(tr, groupImageError('count')));
+            return;
+          }
+          const accepted = candidates.slice(0, room);
+          if (candidates.length > room) setFailure(imageErrorText(tr, groupImageError('count')));
+          setPreparingImages(true);
+          try {
+            const prepared = [];
+            for (const file of accepted) {
+              try {
+                prepared.push(await prepareGroupImage(file));
+              } catch (error) {
+                setFailure(imageErrorText(tr, error));
+              }
+            }
+            if (prepared.length === 0 || !mountedRef.current) return;
+            setImages((current) => [...current, ...prepared].slice(0, GROUP_IMAGE_MAX_COUNT));
+          } finally {
+            if (mountedRef.current) setPreparingImages(false);
+          }
+        };
+
+        const removeImage = (id) => {
+          setImages((current) => current.filter((image) => image.id !== id));
+        };
+
         const send = async () => {
           const text = draft.trim();
-          if (text === '' || sending) return;
+          if ((text === '' && images.length === 0) || sending || preparingImages) return;
           setSending(true);
           setFailure(null);
           setMention(null);
@@ -1616,12 +1892,23 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
             const result = await requestJson(GROUP_SEND_URL, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ groupId: group.id, text }),
+              body: JSON.stringify({
+                groupId: group.id,
+                text,
+                images: images.map((image) => ({
+                  mediaType: image.mediaType,
+                  data: image.data,
+                  name: image.name,
+                  width: image.width,
+                  height: image.height,
+                })),
+              }),
             });
             if (!result.ok || result.data?.ok !== true) {
               throw new Error(result.data?.message ?? `HTTP ${result.status}`);
             }
             setDraft('');
+            setImages([]);
             if (result.data.message !== undefined) {
               setFeed((current) => (current === null ? current : { ...current, messages: [...(current.messages ?? []), result.data.message] }));
             }
@@ -1633,6 +1920,41 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
           } finally {
             setSending(false);
           }
+        };
+
+        /**
+         * Render the images attached to one feed message.
+         * @param {object} message - transcript message.
+         * @returns {object | null} image row, or null.
+         */
+        const messageImages = (message) => {
+          const items = Array.isArray(message?.images)
+            ? message.images.filter((image) => image !== null && typeof image === 'object' && typeof image.url === 'string')
+            : [];
+          if (items.length === 0) return null;
+          return h(
+            'div',
+            { className: 'pagent-group-message-images' },
+            items.map((image) =>
+              h(
+                'a',
+                {
+                  key: image.id ?? image.url,
+                  className: 'pagent-group-message-image-link',
+                  href: imageHref(image.url),
+                  target: '_blank',
+                  rel: 'noreferrer noopener',
+                  title: typeof image.name === 'string' ? image.name : '',
+                },
+                h('img', {
+                  className: 'pagent-group-message-image',
+                  src: imageHref(image.url),
+                  alt: typeof image.name === 'string' ? image.name : '',
+                  loading: 'lazy',
+                }),
+              ),
+            ),
+          );
         };
 
         const identityOfMessage = (message) => participants.find((participant) => participant.id === message.identityId) ?? { name: message.name ?? '—', accent: '#5b5bd6', avatar: '' };
@@ -1671,7 +1993,14 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
                     ? h(
                         'div',
                         { key: message.id, className: 'pagent-group-message', 'data-role': 'user' },
-                        h('div', { className: 'pagent-group-bubble pagent-group-bubble-user' }, h('div', { className: 'pagent-group-message-text' }, renderMessageText(message.text))),
+                        h(
+                          'div',
+                          { className: 'pagent-group-bubble pagent-group-bubble-user' },
+                          typeof message.text === 'string' && message.text !== ''
+                            ? h('div', { className: 'pagent-group-message-text' }, renderMessageText(message.text))
+                            : null,
+                          messageImages(message),
+                        ),
                         h('time', { className: 'pagent-group-message-time' }, timeOf(message.time)),
                       )
                     : h(
@@ -1702,7 +2031,25 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
           failure === null ? null : h('p', { className: 'pagent-group-page-error', role: 'alert' }, failure),
           h(
             'div',
-            { className: 'pagent-group-composer' },
+            {
+              className: 'pagent-group-composer',
+              'data-dragover': dragging ? 'true' : 'false',
+              onDragOver: (event) => {
+                if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+                event.preventDefault();
+                if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+                setDragging(true);
+              },
+              onDragLeave: (event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false);
+              },
+              onDrop: (event) => {
+                event.preventDefault();
+                setDragging(false);
+                const files = Array.from(event.dataTransfer?.files ?? []);
+                if (files.length > 0) void addImages(files);
+              },
+            },
             mentionChoices.length === 0
               ? null
               : h(
@@ -1735,6 +2082,48 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
                     ),
                   ),
                 ),
+            images.length === 0
+              ? null
+              : h(
+                  'div',
+                  { className: 'pagent-group-attachments' },
+                  images.map((image) =>
+                    h(
+                      'div',
+                      { key: image.id, className: 'pagent-group-attachment' },
+                      h('img', {
+                        src: image.previewUrl,
+                        alt: typeof image.name === 'string' && image.name !== '' ? image.name : tr('groups.attachImage'),
+                        title: typeof image.name === 'string' ? image.name : '',
+                      }),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'pagent-group-attachment-remove',
+                          title: tr('groups.removeImage'),
+                          'aria-label': tr('groups.removeImage'),
+                          onClick: () => removeImage(image.id),
+                        },
+                        '×',
+                      ),
+                    ),
+                  ),
+                ),
+            h('input', {
+              ref: fileRef,
+              className: 'pagent-group-file',
+              type: 'file',
+              accept: GROUP_IMAGE_TYPES.join(','),
+              multiple: true,
+              tabIndex: -1,
+              'aria-hidden': 'true',
+              onChange: (event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = '';
+                if (files.length > 0) void addImages(files);
+              },
+            }),
             h('textarea', {
               className: 'pagent-group-input',
               ref: inputRef,
@@ -1744,6 +2133,15 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
               onChange: (event) => updateDraft(event.target.value, event.target.selectionStart ?? event.target.value.length),
               onClick: (event) => updateDraft(event.target.value, event.target.selectionStart ?? 0),
               onBlur: () => setMention(null),
+              onPaste: (event) => {
+                const files = Array.from(event.clipboardData?.items ?? [])
+                  .filter((item) => item.kind === 'file' && groupImageMediaType(item.type) !== null)
+                  .map((item) => item.getAsFile())
+                  .filter((file) => file !== null);
+                if (files.length === 0) return;
+                event.preventDefault();
+                void addImages(files);
+              },
               onKeyDown: (event) => {
                 if (event.nativeEvent?.isComposing === true) return;
                 if (mentionChoices.length > 0) {
@@ -1773,10 +2171,51 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
             h(
               'div',
               { className: 'pagent-group-composer-actions' },
-              h('span', { className: 'pagent-group-composer-hint' }, tr('groups.mentionHint')),
+              h(
+                'div',
+                { className: 'pagent-group-composer-tools' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'pagent-group-attach',
+                    title: tr('groups.imageHint', { count: GROUP_IMAGE_MAX_COUNT }),
+                    'aria-label': tr('groups.attachImage'),
+                    disabled: sending || preparingImages,
+                    onClick: () => fileRef.current?.click(),
+                  },
+                  h(
+                    'svg',
+                    {
+                      width: 15,
+                      height: 15,
+                      viewBox: '0 0 24 24',
+                      fill: 'none',
+                      stroke: 'currentColor',
+                      strokeWidth: 1.8,
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round',
+                      'aria-hidden': 'true',
+                    },
+                    h('rect', { x: 3, y: 3, width: 18, height: 18, rx: 2.5 }),
+                    h('circle', { cx: 8.5, cy: 8.5, r: 1.5 }),
+                    h('path', { d: 'm21 15-5-5L5 21' }),
+                  ),
+                ),
+                h(
+                  'span',
+                  { className: 'pagent-group-composer-hint' },
+                  preparingImages ? tr('groups.preparingImages') : tr('groups.mentionHint'),
+                ),
+              ),
               h(
                 'button',
-                { type: 'button', className: 'pagent-button pagent-button-primary', onClick: () => void send(), disabled: sending || draft.trim() === '' },
+                {
+                  type: 'button',
+                  className: 'pagent-button pagent-button-primary',
+                  onClick: () => void send(),
+                  disabled: sending || preparingImages || (draft.trim() === '' && images.length === 0),
+                },
                 sending ? tr('groups.sending') : tr('groups.send'),
               ),
             ),
@@ -2770,7 +3209,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
      */
     function IdentityModule(props) {
       const ctx = props.ctx;
-      const { state, activeId } = useStoreSnapshot();
+      const { state, activeId, activeGroupId } = useStoreSnapshot();
       const [busy, setBusy] = React.useState(null);
       const [failure, setFailure] = React.useState(null);
       const [groupBusy, setGroupBusy] = React.useState(false);
@@ -2789,9 +3228,9 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       const tr = (key, vars) => interpolate(translate(key), vars);
       const identities = state?.identities ?? [];
       const groups = state?.groups ?? [];
+      const activeGroupVisible = groups.some((group) => group.mode === 'multi' && group.id === activeGroupId);
       const [historyIdentity, setHistoryIdentity] = React.useState(null);
       const [historySessions, setHistorySessions] = React.useState([]);
-      const [activeGroupId, setActiveGroupId] = React.useState(null);
       const sessionSource = ctx.get('sessions');
       const workspaceSource = ctx.get('workspaces');
       const sessionList = useObservable(sessionSource?.list);
@@ -2971,7 +3410,6 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       };
 
       const open = async (identityId) => {
-        setActiveGroupId(null);
         setBusy(identityId);
         setFailure(null);
         try {
@@ -3051,8 +3489,8 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
                     {
                       type: 'button',
                       className: 'pagent-identity-row',
-                      'data-active': identity.id === activeId ? 'true' : 'false',
-                      'aria-current': identity.id === activeId ? 'true' : undefined,
+                      'data-active': activeGroupVisible ? 'false' : identity.id === activeId ? 'true' : 'false',
+                      'aria-current': activeGroupVisible ? undefined : identity.id === activeId ? 'true' : undefined,
                       disabled: busy !== null,
                       title: identity.role === '' ? identity.name : `${identity.name} — ${identity.role}`,
                       onClick: () => void open(identity.id),
@@ -3110,6 +3548,8 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
                     {
                       type: 'button',
                       className: 'pagent-group-row',
+                      'data-active': activeGroupId !== null && group.id === activeGroupId ? 'true' : 'false',
+                      'aria-current': activeGroupId !== null && group.id === activeGroupId ? 'true' : undefined,
                       title: group.name,
                       onClick: () => openGroup(group),
                     },
@@ -3806,6 +4246,8 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       inject: ['slots', 'locale'],
       /** Pure group-composer `@` picker logic, exported for the node test suite. */
       __mentions: { mentionTokenAt, mentionCandidates, applyMention },
+      /** Pure group-composer image helpers, exported for the node test suite. */
+      __images: { groupImageMediaType, imageBase64Of, imageBytesOf },
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en: EN, zh: ZH }), 'personal-agent: dictionaries');
 
