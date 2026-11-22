@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Workspace uploads",
+    "description": "Upload files from this computer into the Session's workspace from the Files page header, with per-file progress, failures, and name-safe publishing.",
+    "detail": "docs/DETAIL.md"
+  }
+}
