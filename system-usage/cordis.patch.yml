@@ -1,0 +1,5 @@
+- insert:
+    - id: system-usage
+      name: '@local/system-usage'
+      config:
+        minSampleMs: 500

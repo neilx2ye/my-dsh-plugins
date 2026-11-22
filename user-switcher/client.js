@@ -22,8 +22,10 @@ window.__ModuleLoader__.load({
     const NS = 'userSwitcher';
     /** Host route returning identity, accounts, and live instances. */
     const STATE_URL = 'api/user-switcher/state';
-    /** Host route reusing or starting one account's instance and returning its URL. */
-    const OPEN_URL = 'api/user-switcher/open';
+    /** Host route selecting the account shown in this switcher. */
+    const SELECT_URL = 'api/user-switcher/select';
+    /** Host route starting or reusing the account's own Harness instance. */
+    const INSTANCE_URL = 'api/user-switcher/instance';
     /** Host route hiding or showing one account in the list. */
     const VISIBILITY_URL = 'api/user-switcher/visibility';
     /** Popover width in pixels; also used to clamp its left edge. */
@@ -36,8 +38,11 @@ window.__ModuleLoader__.load({
       'state.ready': 'ready',
       'state.absent': 'not set up',
       'state.denied': 'no access',
-      'row.self': 'current',
+      'row.self': 'process',
       'row.switching': 'switching…',
+      'row.active': 'in use',
+      'row.switch': 'switch',
+      'row.admin': 'admin',
       'loading': 'Reading accounts…',
       'error.load': 'Could not read accounts: {message}',
       'accounts.empty': 'No switchable account.',
@@ -54,8 +59,11 @@ window.__ModuleLoader__.load({
       'state.ready': '已就绪',
       'state.absent': '未初始化',
       'state.denied': '无权查看',
-      'row.self': '当前',
+      'row.self': '进程用户',
       'row.switching': '切换中…',
+      'row.active': '使用中',
+      'row.switch': '切换',
+      'row.admin': '管理员',
       'loading': '正在读取账户…',
       'error.load': '读取账户失败：{message}',
       'accounts.empty': '没有可切换的账户。',
@@ -171,10 +179,67 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Open the personal-agent identity bound to the account, so the workspace,
+     * the persona and the memory all follow the switched user. Falls back to
+     * the account's plain home workspace when no identity answers.
+     * @param ctx - client context carrying the Workspace services.
+     * @param name - selected account name.
+     * @param home - selected account home directory.
+     */
+    async function openIdentityFor(ctx, name, home) {
+      const ui = ctx.get('uiWorkspace');
+      if (ui !== undefined) {
+        try {
+          const response = await fetch('api/personal-agent/open', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ identityId: name.toLowerCase() }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (typeof data.sessionId === 'string' && data.sessionId !== '') {
+              ui.openSession(data.sessionId);
+              return;
+            }
+            if (typeof data.workspaceId === 'string' && data.workspaceId !== '') {
+              ui.startSession(data.workspaceId);
+              return;
+            }
+          }
+        } catch {
+          // Fall through to the workspace path.
+        }
+      }
+      await openWorkspaceFor(ctx, home);
+    }
+
+    /**
+     * Open a session inside the account's home workspace, creating the
+     * workspace and a blank session when they do not exist yet, so the visible
+     * project follows the switched identity.
+     * @param ctx - client context carrying the Workspace services.
+     * @param home - target account's home directory.
+     */
+    async function openWorkspaceFor(ctx, home) {
+      const workspaces = ctx.get('workspaces');
+      const ui = ctx.get('uiWorkspace');
+      if (workspaces === undefined || ui === undefined) return;
+      const snapshot = workspaces.list.getSnapshot();
+      let view = (snapshot.items ?? []).find((item) => item.path === home);
+      if (view === undefined) view = await workspaces.create({ path: home });
+      if (view === undefined) return;
+      const archived = workspaces.list.getSnapshot().archivedSessionIds ?? [];
+      const sessionId = (view.sessionIds ?? []).find((id) => !archived.includes(id));
+      if (sessionId === undefined) ui.startSession(view.workspaceId);
+      else ui.openSession(sessionId);
+    }
+
+    /**
      * Build the popover, closing over the namespace translator.
      * @param tr - translate function bound to this namespace.
+     * @param ctx - client context carrying the Workspace services.
      */
-    function makePopover(tr) {
+    function makePopover(tr, ctx) {
       return function UserSwitcherPopover(props) {
         const { anchor, onClose } = props;
         const [state, setState] = React.useState(null);
@@ -230,34 +295,36 @@ window.__ModuleLoader__.load({
           return { left, bottom: window.innerHeight - rect.top + 6, maxHeight };
         }, [anchor]);
 
-        const pick = React.useCallback(async (user) => {
+        const pick = React.useCallback(async (user, home) => {
           setPending(user);
           setError(null);
           try {
-            const result = await requestJson(OPEN_URL, {
+            const result = await requestJson(SELECT_URL, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ user }),
             });
-            const url = result.data?.url;
-            if (result.ok && typeof url === 'string' && url !== '') {
-              window.location.assign(url);
+            if (!result.ok || result.data?.ok !== true) throw new Error(result.data?.message ?? `HTTP ${result.status}`);
+            setState((current) => (current === null ? current : { ...current, selected: result.data.selected }));
+            setPending(null);
+            const instance = await requestJson(INSTANCE_URL, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ user }),
+            });
+            const target = instance.data?.url;
+            if (instance.ok && typeof target === 'string' && target !== '') {
+              window.location.assign(target);
               return;
             }
-            setPending(null);
-            setError(result.data?.message ?? `HTTP ${result.status}`);
+            if (!instance.ok) setError(instance.data?.message ?? `HTTP ${instance.status}`);
           } catch (failure) {
             setPending(null);
             setError(failure instanceof Error ? failure.message : String(failure));
           }
-        }, []);
+        }, [ctx]);
 
-        const stateOf = (user) => {
-          if (user.running > 0) return { dot: 'on', label: tr('state.running') };
-          if (user.dshHomeState === 'directory') return { dot: '', label: tr('state.ready') };
-          if (user.dshHomeState === 'missing') return { dot: 'off', label: tr('state.absent') };
-          return { dot: 'no', label: tr('state.denied') };
-        };
+        const isActive = (user) => (state.selected === null ? user.name === state.self?.user : user.name === state.selected);
 
         const toggleVisible = React.useCallback(async (user) => {
           const nextVisible = user.visible === false;
@@ -284,25 +351,32 @@ window.__ModuleLoader__.load({
 
         const switchRow = (user, self) => {
           const isSelf = user.name === self;
-          const view = stateOf(user);
+          const active = isActive(user);
           const switching = pending === user.name;
+          const label = switching
+            ? tr('row.switching')
+            : active
+              ? tr('row.active')
+              : user.admin
+                ? tr('row.admin')
+                : tr('row.switch');
           return h(
             'button',
             {
               type: 'button',
               key: user.name,
               className: 'usw-row',
-              disabled: isSelf || pending !== null,
+              disabled: active || pending !== null,
               title: isSelf ? tr('row.self') : user.name,
-              onClick: () => void pick(user.name),
+              onClick: () => void pick(user.name, user.home),
             },
             h('span', { className: 'usw-av', 'aria-hidden': true }, user.name.slice(0, 1)),
             h('span', { className: 'nm' }, user.name),
             h(
               'span',
               { className: 'usw-right' },
-              switching ? null : h('span', { className: `usw-dot ${view.dot}` }),
-              h('span', { className: 'st' }, switching ? tr('row.switching') : isSelf ? tr('row.self') : view.label),
+              switching ? null : h('span', { className: `usw-dot ${active ? 'on' : ''}` }),
+              h('span', { className: 'st' }, label),
             ),
           );
         };
@@ -379,8 +453,8 @@ window.__ModuleLoader__.load({
      * Build the sidebar-foot trigger, closing over the namespace translator.
      * @param tr - translate function bound to this namespace.
      */
-    function makeTrigger(tr) {
-      const Popover = makePopover(tr);
+    function makeTrigger(tr, ctx) {
+      const Popover = makePopover(tr, ctx);
       return function UserSwitcherTrigger(props) {
         const [open, setOpen] = React.useState(false);
         const buttonRef = React.useRef(null);
@@ -451,7 +525,7 @@ window.__ModuleLoader__.load({
               locale: NS,
               label: () => tr('footer.title'),
             },
-            makeTrigger(tr),
+            makeTrigger(tr, ctx),
           ),
         );
       },

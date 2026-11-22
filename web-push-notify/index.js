@@ -7,8 +7,8 @@
  * stored subscription (RFC 8291 `aes128gcm`) and posts it to the browser push
  * service with a VAPID JWT (RFC 8292). The Service Worker served from `/sw.js`
  * turns that push into a system notification. Sessions whose header marks them
- * as subagents are ignored, and a page that is visibly open suppresses the
- * notification in the Service Worker rather than losing it in the Host.
+ * as subagents are ignored, and a page that is visible AND focused suppresses
+ * the notification in the Service Worker rather than losing it in the Host.
  *
  * A second, page-local channel (`/api/web-push-notify/events`, SSE) lets a page
  * that could not obtain a push subscription still show the same notification
@@ -52,6 +52,8 @@ const TEST_PATH = '/api/web-push-notify/test';
 const ACK_PATH = '/api/web-push-notify/ack';
 /** Owner-only SSE route for page-local fallback notifications. */
 const EVENTS_PATH = '/api/web-push-notify/events';
+/** How long a turn/end stays usable as proof of a completion after a reload. */
+const TURN_END_GRACE_MS = 120_000;
 
 /** Defaults for a row that supplies no config. */
 const DEFAULTS = Object.freeze({
@@ -506,11 +508,14 @@ function createNotifier(ctx, settings) {
     if (Buffer.from(p256dh, 'base64url').length !== 65) return undefined;
     if (Buffer.from(auth, 'base64url').length < 16) return undefined;
     const locale = typeof input?.locale === 'string' ? input.locale.slice(0, 35) : 'zh';
+    // Absent means the older default: notify even while the page is focused.
+    const notifyWhileViewing = input?.notifyWhileViewing !== false;
     return {
       endpoint,
       keys: { p256dh, auth },
       expirationTime: typeof candidate.expirationTime === 'number' ? candidate.expirationTime : null,
       locale,
+      notifyWhileViewing,
       ua: (request.headers.get('user-agent') ?? '').slice(0, 240),
       addedAt: Date.now(),
     };
@@ -593,7 +598,19 @@ function createNotifier(ctx, settings) {
     const results = await Promise.all(
       targets.map(async (subscription) => ({
         subscription,
-        result: await sendOne(subscription, payloadFor(base, subscription.locale), ttl),
+        result: await sendOne(
+          subscription,
+          payloadFor(
+            {
+              ...base,
+              // A subscriber that opted into foreground notifications asks the
+              // Service Worker not to suppress the card while the page is focused.
+              force: base.test === true || base.force === true || subscription.notifyWhileViewing !== false,
+            },
+            subscription.locale,
+          ),
+          ttl,
+        ),
       })),
     );
     let pruned = 0;
@@ -657,7 +674,10 @@ function createNotifier(ctx, settings) {
   async function complete(sessionId, startedAt) {
     const sessions = ctx.get('sessions');
     const session = sessions?.get(sessionId);
-    if (session?.header?.origin === 'subagent') return;
+    if (session?.header?.origin === 'subagent') {
+      turnEnds.delete(String(sessionId));
+      return;
+    }
 
     let title;
     try {
@@ -898,17 +918,25 @@ function createNotifier(ctx, settings) {
         return;
       }
       const startedAt = running.get(key);
-      if (startedAt === undefined) return;
       running.delete(key);
+      // A plugin reload or process restart during a running turn loses the
+      // start timestamp. The turn/end event still reaches this process, so a
+      // fresh one proves a main turn just finished; use it as the start so the
+      // completion is not silently dropped.
+      const ended = turnEnds.get(key);
+      const justEnded = ended !== undefined && Date.now() - ended.at < TURN_END_GRACE_MS;
+      if (startedAt === undefined && !justEnded) return;
+      const since = startedAt ?? ended.at;
       void ready.then(() => {
         if (disposed) return;
-        return complete(key, startedAt);
+        return complete(key, since);
       });
     });
 
     ctx.on('session/event', (session, event) => {
       if (event?.type !== 'turn/end') return;
-      turnEnds.set(String(session.id), { at: Date.now(), reason: event.data?.reason ?? { kind: 'unknown' } });
+      const at = typeof event.time === 'number' ? event.time : Date.now();
+      turnEnds.set(String(session.id), { at, reason: event.data?.reason ?? { kind: 'unknown' } });
       if (turnEnds.size > 200) {
         const oldest = turnEnds.keys().next().value;
         if (oldest !== undefined) turnEnds.delete(oldest);

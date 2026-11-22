@@ -43,6 +43,12 @@ import {
 } from './lib/identity.js';
 import { appendMemory, byteLength, countNotes, normalizeMemoryText, readMemorySync, renderNotes, searchMemory, writeMemory } from './lib/memory.js';
 import { resolveIdentityPaths } from './lib/paths.js';
+import {
+  PERSONAL_PRESET_ID,
+  hidePersonalPreset,
+  personalPresetAllowed,
+  workspaceFallbackPreset,
+} from './lib/presets.js';
 
 export { Config };
 
@@ -87,7 +93,10 @@ const GROUP_SECTION_ORDER = -998;
 const SUBAGENT_PROVIDER = 'spawn';
 
 /** Name of the agent preset this bundle declares. */
-const PRESET_ID = 'personal';
+const PRESET_ID = PERSONAL_PRESET_ID;
+
+/** Refusal text for a workspace conversation that asks for the personal preset. */
+const PERSONAL_REFUSED = 'Personal 模式只用于个人身份会话，工作区会话不能使用。';
 
 /** Image media types a group message may carry, with their file extension. */
 const GROUP_IMAGE_TYPES = new Map([
@@ -1614,6 +1623,95 @@ export function apply(ctx, rawConfig) {
       .then(() => reconcileIdentityOrder(scope.workspaceRegistry))
       .catch((error) => {
         logger?.warn?.(`personal-agent: could not prepare identity and group workspaces: ${messageOf(error)}`);
+      });
+  });
+
+  // ── personal preset policy ─────────────────────────────────────────────────
+  // Personal describes a named identity in its own home, so it is not a mode a
+  // project conversation may run. Keep it out of the selectable roster and
+  // refuse it for every Session whose directory belongs to a workspace.
+
+  /**
+   * Whether one working directory may run the personal preset.
+   * @param cwd - effective working directory, or undefined when unknown.
+   * @returns whether the directory is an identity or group home.
+   */
+  function personalAllowedFor(cwd) {
+    return personalPresetAllowed(cwd, {
+      identityHomes: records.map((record) => record.canonicalHome),
+      groupsRoot,
+    });
+  }
+
+  /**
+   * Replace one Service prototype method for as long as this plugin row lives.
+   * The Service instance is a traced proxy, so the class prototype is the only
+   * place a replacement can be installed once and seen by Remote calls.
+   * @param service - Service instance or its traced proxy.
+   * @param name - method name.
+   * @param wrap - builds the replacement from the original method.
+   * @returns a disposer that restores the original method.
+   */
+  function patchServiceMethod(service, name, wrap) {
+    const prototype = service === undefined || service === null ? undefined : Object.getPrototypeOf(service);
+    const original = prototype?.[name];
+    if (typeof original !== 'function') return () => {};
+    const patched = wrap(original);
+    prototype[name] = patched;
+    return () => {
+      if (prototype[name] === patched) prototype[name] = original;
+    };
+  }
+
+  ctx.inject(['agentPresets'], (scope) => {
+    const presets = scope.agentPresets;
+    if (presets === undefined) return;
+    const restoreRoster = patchServiceMethod(presets, 'remoteExportList', (original) =>
+      async function listWithoutPersonal(...args) {
+        return hidePersonalPreset(await original.apply(this, args));
+      });
+    const restoreSelect = patchServiceMethod(presets, 'select', (original) =>
+      async function selectWithoutPersonal(agent, agentPreset) {
+        if (agentPreset === PRESET_ID && !personalAllowedFor(cwdOf(agent?.session, scope))) {
+          throw new Error(PERSONAL_REFUSED);
+        }
+        return original.apply(this, arguments);
+      });
+    return () => {
+      restoreSelect();
+      restoreRoster();
+    };
+  });
+
+  ctx.inject(['sessionController'], (scope) => {
+    const controller = scope.sessionController;
+    if (controller === undefined) return;
+    return patchServiceMethod(controller, 'create', (original) =>
+      async function createOutsidePersonal(request) {
+        const workspace = request?.workspaceId === undefined
+          ? undefined
+          : ctx.get('workspaceRegistry')?.get(request.workspaceId);
+        const cwd = workspace?.path ?? request?.cwd;
+        if (request?.agentPreset === PRESET_ID && !personalAllowedFor(cwd)) {
+          throw new Error(PERSONAL_REFUSED);
+        }
+        // A workspace Session created without a preset must not silently land on
+        // a profile default that is personal; use the ordinary preset instead.
+        if (request?.agentPreset === undefined && !personalAllowedFor(cwd)) {
+          const registry = ctx.get('agentPresets');
+          try {
+            const resolved = await registry?.resolve();
+            if (resolved?.id === PRESET_ID) {
+              const fallback = workspaceFallbackPreset(await registry.list());
+              if (fallback !== undefined && fallback !== PRESET_ID) {
+                return original.call(this, { ...request, agentPreset: fallback });
+              }
+            }
+          } catch (error) {
+            logger?.warn?.(`personal-agent: could not resolve a workspace preset: ${messageOf(error)}`);
+          }
+        }
+        return original.call(this, request);
       });
   });
 

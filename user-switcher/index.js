@@ -2,35 +2,41 @@
  * Host half of the system-user switcher bundle.
  *
  * DSH runs as one Linux account for its whole lifetime: nothing in this
- * process can change the uid its own commands run under. What a plugin *can*
- * do is be precise about that fact — report the identity this Harness runs as,
- * list the local accounts a session could move to, show which of them already
- * have a DSH home, detect instances already running for them, and hand back
- * exact, paste-ready commands. Launching a second instance under another
- * account is attempted only when this process already holds the privilege to
- * do it (root, or passwordless sudo); otherwise the route fails with the
- * reasons and the same commands, and never pretends the switch happened.
+ * process can change the uid it owns. What this plugin changes is the identity
+ * every shell command runs under. The long-lived Host keeps its sessions,
+ * model, plugins, credentials and settings; each Bash execution is handed to
+ * `setpriv` for the account selected in the sidebar. Switching therefore
+ * changes the working environment only, never the Harness configuration.
  *
- * Three owner-only Fetch routes back the sidebar panel; `ctx.connection.fetch`
- * performs browser admission before any handler runs.
+ * The selection is global to this Harness home and persisted in
+ * `<DSH_HOME>/storages/user-switcher.json`.
  */
 
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
-import { homedir, hostname } from 'node:os';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { homedir, hostname, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 
-/** Service this bundle needs from the Web Host composition. */
-export const inject = ['connection'];
+/** Services this bundle needs from the Web Host composition. */
+export const inject = ['agents', 'connection', 'shell', 'workingDirectory'];
 
-/** Exact Fetch route reporting identity, candidate users, and live instances. */
+/** Exact Fetch route reporting identity, candidate users, and the selection. */
 const STATE_PATH = '/api/user-switcher/state';
-/** Exact Fetch route returning switch commands for one account. */
-const PLAN_PATH = '/api/user-switcher/plan';
-/** Exact Fetch route reusing or starting one account's instance and returning its URL. */
+/** Exact Fetch route selecting the account shell commands run as. */
+const SELECT_PATH = '/api/user-switcher/select';
+/** Legacy route used by clients served before the identity-switch change. */
 const OPEN_PATH = '/api/user-switcher/open';
+/** Exact Fetch route starting or reusing one account's own Harness instance. */
+const INSTANCE_PATH = '/api/user-switcher/instance';
 /** Exact Fetch route hiding or showing one account in the switcher list. */
 const VISIBILITY_PATH = '/api/user-switcher/visibility';
+
+/** Privilege-dropping helper every switched command goes through. */
+const SETPRIV = '/usr/bin/setpriv';
+/** Marks the one wrapper installed on `ctx.shell.execute`. */
+const PATCHED = Symbol.for('@local/user-switcher/patched-execute');
+/** Keeps the executor's own method under any number of plugin reloads. */
+const ORIGINAL = Symbol.for('@local/user-switcher/base-execute');
 
 /** Defaults for a row that supplies no config. */
 const DEFAULTS = Object.freeze({
@@ -78,7 +84,7 @@ function pickInteger(value, fallback, field, min, max) {
 }
 
 /**
- * Register the three routes.
+ * Register the routes and the shell-identity wrapper.
  * @param ctx - Host root Context.
  * @param config - the Loader row's config.
  */
@@ -86,6 +92,52 @@ export function apply(ctx, config) {
   const settings = readSettings(config);
   /** Cached privilege probe; running `sudo -n` on every paint would be rude. */
   const probe = { at: 0, allowed: false };
+  /** Selected account, or null while commands run under the process account. */
+  const shared = selectionState();
+  /** Local accounts whose home a command directory may sit under. */
+  let accounts = [];
+  void readPasswd().then((rows) => { accounts = rows; });
+
+  /**
+   * Put every live session back on its own recorded directory. Switching
+   * opens a session inside the selected account's home workspace, so this only
+   * repairs sessions an earlier build moved off their recorded directory.
+   */
+  const restoreRecordedWorkspace = async () => {
+    for (const agent of ctx.agents.list()) {
+      try {
+        const recorded = agent.session.header.cwd;
+        if (typeof recorded === 'string' && recorded !== '' && ctx.workingDirectory.get(agent.session) !== recorded) {
+          await ctx.workingDirectory.set(agent, recorded);
+        }
+      } catch {
+        // A session whose directory cannot move keeps its current one.
+      }
+    }
+  };
+
+  void restoreSelection(settings).then((entry) => {
+    shared.user = entry;
+  });
+
+  ctx.effect(
+    () => {
+      const shell = ctx.shell;
+      const base = shell.execute[ORIGINAL] ?? shell.execute;
+      const wrapped = function switched(spec) {
+        const target = userForWorkdir(spec.workdir, accounts);
+        if (target === undefined) return base.call(shell, spec);
+        return base.call(shell, runAs(spec, target));
+      };
+      wrapped[PATCHED] = true;
+      wrapped[ORIGINAL] = base;
+      shell.execute = wrapped;
+      return () => {
+        if (shell.execute === wrapped) shell.execute = base;
+      };
+    },
+    'user-switcher: shell identity',
+  );
 
   ctx.effect(
     () =>
@@ -93,29 +145,94 @@ export function apply(ctx, config) {
         path: STATE_PATH,
         methods: ['GET'],
         requestBody: 'buffered',
-        fetch: async () => Response.json(await snapshot(settings, probe)),
+        fetch: async () => Response.json(await snapshot(settings, probe, shared.user)),
       }),
     'user-switcher: state route',
+  );
+
+  /**
+   * Validate one selection request and apply it.
+   * @param request - admitted owner Fetch request.
+   * @returns the chosen account, or a failure response.
+   */
+  const choose = async (request) => {
+    const parsed = await readUserBody(request);
+    if (parsed.failure !== undefined) return { failure: parsed.failure };
+    const state = await snapshot(settings, probe, shared.user);
+    const user = state.users.find((entry) => entry.name === parsed.user);
+    if (user === undefined) return { failure: failure(404, 'unknown-user', `no switchable local account named ${parsed.user}`) };
+    if (!state.privilege.canSwitch && user.name !== state.self.user) {
+      return { failure: Response.json({ code: 'privilege-required', message: state.privilege.reason }, { status: 403 }) };
+    }
+    shared.user = { name: user.name, uid: user.uid, gid: user.gid, home: user.home, shell: user.shell };
+    accounts = await readPasswd();
+    const store = await readStore();
+    store.selected = user.name;
+    await writeStore(store);
+    return { user };
+  };
+
+  ctx.effect(
+    () =>
+      ctx.connection.fetch.register({
+        path: SELECT_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+          const chosen = await choose(request);
+          if (chosen.failure !== undefined) return chosen.failure;
+          await restoreRecordedWorkspace();
+          return Response.json({ ok: true, selected: chosen.user.name });
+        },
+      }),
+    'user-switcher: select route',
   );
 
   ctx.effect(
     () =>
       ctx.connection.fetch.register({
-        path: PLAN_PATH,
+        path: INSTANCE_PATH,
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {
           const parsed = await readUserBody(request);
           if (parsed.failure !== undefined) return parsed.failure;
-          const state = await snapshot(settings, probe);
+          const state = await snapshot(settings, probe, shared.user);
           const user = state.users.find((entry) => entry.name === parsed.user);
           if (user === undefined) return failure(404, 'unknown-user', `no local account named ${parsed.user}`);
-          return Response.json(planFor(state, user));
+          if (user.name === state.self.user) return Response.json({ ok: true, url: null });
+          if (!state.privilege.canSwitch) {
+            // A non-admin instance cannot read another account's sign-in link,
+            // but the browser may already hold that instance's session cookie.
+            const hostHeader = firstHeader(request.headers, 'x-forwarded-host') ?? firstHeader(request.headers, 'host') ?? '';
+            const authority = hostHeader.split(',')[0].trim();
+            const proto = (firstHeader(request.headers, 'x-forwarded-proto') ?? 'http').split(',')[0].trim().toLowerCase();
+            if (authority !== '' && /^[A-Za-z0-9.\-:[\]]+$/.test(authority)) {
+              const mount = user.uid === 0 ? '/' : `/${user.name}/`;
+              return Response.json({ ok: true, url: `${proto === 'https' ? 'https' : 'http'}://${authority}${mount}`, loginRequired: true });
+            }
+            return Response.json({ code: 'privilege-required', message: state.privilege.reason }, { status: 403 });
+          }
+          // This instance must not keep a workspace pointing at another
+          // account's home; that account's own instance owns that directory.
+          const registry = typeof ctx.get === 'function' ? ctx.get('workspaceRegistry') : undefined;
+          if (registry !== undefined) {
+            try {
+              const stale = registry.list().find((workspace) => workspace.path === user.home);
+              if (stale !== undefined) await registry.delete(stale.id);
+            } catch {
+              // A leftover registration is harmless; the instance still opens.
+            }
+          }
+          return Response.json(await ensureInstance(user, settings, request));
         },
       }),
-    'user-switcher: plan route',
+    'user-switcher: instance route',
   );
 
+  // Clients served before the identity-switch change still call /open. Select
+  // the account and send them through a page load so they pick up the current
+  // client bundle instead of reporting a missing route.
   ctx.effect(
     () =>
       ctx.connection.fetch.register({
@@ -123,37 +240,13 @@ export function apply(ctx, config) {
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {
-          const parsed = await readUserBody(request);
-          if (parsed.failure !== undefined) return parsed.failure;
-          const state = await snapshot(settings, probe);
-          const user = state.users.find((entry) => entry.name === parsed.user);
-          if (user === undefined) return failure(404, 'unknown-user', `no local account named ${parsed.user}`);
-
-          // A live instance can only be entered with a URL this process can sign;
-          // that signature belongs to one Harness home, so it works for this
-          // account and for no other.
-          const livePort = livePortOf(state, user.name);
-          if (user.name === state.self.user) {
-            if (livePort === undefined) {
-              return failure(400, 'same-user', 'this account already runs the Harness serving this page');
-            }
-            const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${livePort}/`);
-            return Response.json({ ok: true, reused: true, url });
-          }
-          if (livePort !== undefined) {
-            return failure(
-              409,
-              'instance-running',
-              `${user.name} already has an instance on port ${livePort}; its sign-in link is only printed in that instance's own terminal`,
-            );
-          }
-          if (!state.privilege.canLaunch) {
-            return Response.json({ code: 'privilege-required', message: state.privilege.reason }, { status: 403 });
-          }
-          return Response.json(await launch(state, user, settings));
+          const chosen = await choose(request);
+          if (chosen.failure !== undefined) return chosen.failure;
+          await restoreRecordedWorkspace();
+          return Response.json({ ok: true, selected: chosen.user.name, url: pageUrl(request) });
         },
       }),
-    'user-switcher: open route',
+    'user-switcher: legacy open route',
   );
 
   ctx.effect(
@@ -169,16 +262,243 @@ export function apply(ctx, config) {
           if (typeof visible !== 'boolean') return failure(400, 'invalid-visible', 'visible must be a boolean');
           const known = (await readPasswd()).some((entry) => entry.name === parsed.user);
           if (!known) return failure(404, 'unknown-user', `no local account named ${parsed.user}`);
-          const hidden = new Set(await readHidden());
+          const store = await readStore();
+          const hidden = new Set(store.hidden);
           if (visible) hidden.delete(parsed.user);
           else hidden.add(parsed.user);
-          const next = [...hidden].sort();
-          await writeHidden(next);
-          return Response.json({ ok: true, hidden: next });
+          store.hidden = [...hidden].sort();
+          await writeStore(store);
+          return Response.json({ ok: true, hidden: store.hidden });
         },
       }),
     'user-switcher: visibility route',
   );
+}
+
+/**
+ * Browser-facing root URL derived from an admitted request.
+ * @param request - admitted owner Fetch request.
+ * @returns the absolute site root, or `/` when the host is unusable.
+ */
+function pageUrl(request) {
+  const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '').split(',')[0].trim();
+  if (!/^[A-Za-z0-9.\-:[\]]+$/.test(host)) return '/';
+  const forwarded = (request.headers.get('x-forwarded-proto') ?? 'http').split(',')[0].trim().toLowerCase();
+  return `${forwarded === 'https' ? 'https' : 'http'}://${host}/`;
+}
+
+/**
+ * One selection cell shared by every plugin instance in this process, so a
+ * route served by a reloaded instance and a shell wrapper installed by an
+ * earlier one never disagree about the target account.
+ * @returns the live selection cell.
+ */
+function selectionState() {
+  const key = Symbol.for('@local/user-switcher/selection');
+  const existing = globalThis[key];
+  if (existing !== undefined) return existing;
+  const created = { user: null };
+  globalThis[key] = created;
+  return created;
+}
+
+/**
+ * Restore the persisted account from this Harness home's store.
+ * @param settings - normalized settings.
+ * @returns the passwd entry, or null when nothing usable is stored.
+ */
+async function restoreSelection(settings) {
+  try {
+    const store = await readStore();
+    if (store.selected === null) return null;
+    const entry = (await readPasswd()).find((row) => row.name === store.selected);
+    if (entry === undefined) return null;
+    if (entry.uid !== 0 && (entry.uid < settings.minUid || NON_INTERACTIVE_SHELLS.has(entry.shell))) return null;
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read one header, keeping only its first comma-separated value.
+ * @param headers - request headers.
+ * @param name - header name.
+ * @returns the trimmed value, or undefined when absent or empty.
+ */
+function firstHeader(headers, name) {
+  const value = headers.get(name);
+  if (value === null) return undefined;
+  const trimmed = value.split(',')[0].trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+/**
+ * Start or reuse one account's own Harness instance and return its sign-in URL.
+ * Each account runs a separate process with its own DSH_HOME, so the two never
+ * share workspaces, identities, or sessions. Cross-account work goes through
+ * passwordless sudo, which this deployment grants because every account is the
+ * same operator.
+ * @param user - target account.
+ * @param settings - normalized settings.
+ * @param request - the admitted owner request, used to derive the public origin.
+ * @returns `{ ok, url }` or a failure object.
+ */
+async function ensureInstance(user, settings, request) {
+  const hostHeader = firstHeader(request.headers, 'x-forwarded-host') ?? firstHeader(request.headers, 'host') ?? '';
+  const authority = hostHeader.split(',')[0].trim();
+  if (authority === '' || !/^[A-Za-z0-9.\-:[\]]+$/.test(authority)) {
+    return { ok: false, code: 'no-host', message: 'the request carries no usable host' };
+  }
+  const proto = (firstHeader(request.headers, 'x-forwarded-proto') ?? 'http').split(',')[0].trim().toLowerCase();
+  const scheme = proto === 'https' ? 'https' : 'http';
+  const session = user.uid === 0 ? 'dsh' : `dsh-${user.name}`;
+  const pane = await tmuxAs(user.name, ['capture-pane', '-p', '-J', '-t', session, '-S', '-5000']);
+  if (pane.code === 0) {
+    const found = lastSignInUrl(pane.stdout);
+    if (found !== undefined) return { ok: true, url: found };
+  }
+  if (user.uid === 0) {
+    return { ok: true, url: `${scheme}://${authority}/`, loginRequired: true };
+  }
+  const port = settings.port + (user.uid - 1000);
+  const publicUrl = `${scheme}://${authority}/${user.name}/`;
+  const launched = await tmuxAs(user.name, [
+    'new-session', '-d', '-s', session, '-c', user.home, '--',
+    'env', '-i', `HOME=${user.home}`,
+    'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    `DSH_HOME=${user.home}/.dsh`,
+    process.argv[1] ?? 'dsh',
+    'web', '--port', String(port), '--no-open',
+    '--public-url', publicUrl, '--trusted-host', authority,
+  ]);
+  if (launched.code !== 0) {
+    return { ok: false, code: 'launch-failed', message: launched.stderr.trim() || launched.stdout.trim() || 'tmux failed' };
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const next = await tmuxAs(user.name, ['capture-pane', '-p', '-J', '-t', session, '-S', '-200']);
+    if (next.code !== 0) continue;
+    const found = lastSignInUrl(next.stdout);
+    if (found !== undefined) return { ok: true, url: found };
+  }
+  return { ok: false, code: 'no-url', message: 'the instance started but printed no sign-in link' };
+}
+
+/**
+ * Run one tmux subcommand as the target account: directly when this process
+ * already runs as it, otherwise through passwordless sudo.
+ * @param target - account name.
+ * @param args - tmux arguments.
+ * @returns the command result.
+ */
+function tmuxAs(target, args) {
+  if (target === userInfo().username) return runFile('tmux', args);
+  return runFile('sudo', ['-n', '-u', target, 'tmux', ...args]);
+}
+
+/**
+ * Free the shared secondary port by stopping another account's instance.
+ * @param port - port to free.
+ * @returns whether the port is free.
+ */
+async function freeSlot(port) {
+  if (!(await portBusy(port))) return true;
+  const sessions = await runFile('tmux', ['list-sessions', '-F', '#{session_name}']);
+  if (sessions.code === 0) {
+    for (const name of sessions.stdout.split('\n').map((line) => line.trim())) {
+      if (name.startsWith('dsh-') && name !== 'dsh') await runFile('tmux', ['kill-session', '-t', name]);
+    }
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (!(await portBusy(port))) return true;
+  }
+  return false;
+}
+
+/**
+ * Report whether a TCP port currently has a listener.
+ * @param port - port number.
+ * @returns whether something listens.
+ */
+async function portBusy(port) {
+  const result = await runFile('ss', ['-H', '-ltn', 'sport', '=', `:${String(port)}`]);
+  return result.code === 0 && result.stdout.trim() !== '';
+}
+
+/**
+ * Extract the last authenticated Harness URL from terminal text.
+ * @param text - unwrapped tmux pane contents.
+ * @returns the URL, or undefined.
+ */
+function lastSignInUrl(text) {
+  const cleaned = text.replace(/\u001b\[[0-9;]*m/g, '');
+  const matches = [...cleaned.matchAll(/https?:\/\/[^\s"'<>]+[?&]token=[A-Za-z0-9_-]+/g)];
+  return matches.length === 0 ? undefined : matches[matches.length - 1][0];
+}
+
+/**
+ * Resolve the account that owns one command directory: the non-root account
+ * whose home contains it, longest home first. Every other directory keeps the
+ * process account, so project and other-identity conversations stay root.
+ * @param workdir - the command's working directory.
+ * @returns the owning passwd entry, or undefined for the process account.
+ */
+function userForWorkdir(workdir, accounts) {
+  if (typeof workdir !== 'string' || workdir === '') return undefined;
+  let best;
+  for (const user of accounts) {
+    if (user.uid === 0 || user.home === '' || user.home === '/') continue;
+    if (workdir !== user.home && !workdir.startsWith(`${user.home}/`)) continue;
+    if (best === undefined || user.home.length > best.home.length) best = user;
+  }
+  return best;
+}
+
+/**
+ * Rewrite one resolved shell spec so it runs under the selected account.
+ * @param spec - resolved Bash execution spec.
+ * @param user - owning passwd entry.
+ * @returns the rewritten spec.
+ */
+function runAs(spec, user) {
+  return {
+    ...spec,
+    command: `exec ${SETPRIV} --reuid=${user.uid} --regid=${user.gid} --init-groups -- bash -c ${shellQuote(spec.command)}`,
+    workdir: workdirFor(spec.workdir, user),
+    env: {
+      ...(spec.env ?? {}),
+      HOME: user.home,
+      USER: user.name,
+      LOGNAME: user.name,
+      SHELL: user.shell,
+    },
+  };
+}
+
+/**
+ * Pick a directory the selected account can actually start in. The Harness
+ * workspace often sits inside root's private home, which no other account may
+ * traverse; such a request falls back to that account's own home.
+ * @param workdir - the caller's requested directory.
+ * @param user - selected passwd entry.
+ * @returns the directory to pass to the process.
+ */
+function workdirFor(workdir, user) {
+  if (typeof workdir !== 'string' || workdir === '') return user.home;
+  if (workdir === user.home || workdir.startsWith(`${user.home}/`)) return workdir;
+  if (user.uid !== 0 && (workdir === '/root' || workdir.startsWith('/root/'))) return user.home;
+  return workdir;
+}
+
+/**
+ * Quote one string for a POSIX shell, including embedded single quotes.
+ * @param value - raw command text.
+ * @returns a single safe shell word.
+ */
+function shellQuote(value) {
+  return `'${String(value).split("'").join(`'\\''`)}'`;
 }
 
 /**
@@ -201,13 +521,13 @@ async function readUserBody(request) {
 }
 
 /**
- * Collect the whole panel state. Cached briefly because one paint asks for it
- * once and the underlying files change rarely.
+ * Collect the whole panel state.
  * @param settings - normalized settings.
  * @param probe - privilege probe cache.
+ * @param selected - currently selected passwd entry or null.
  * @returns the state payload.
  */
-async function snapshot(settings, probe) {
+async function snapshot(settings, probe, selected) {
   const passwd = await readPasswd();
   const groupTable = await readGroups();
   const uidNames = new Map(passwd.map((entry) => [entry.uid, entry.name]));
@@ -237,20 +557,14 @@ async function snapshot(settings, probe) {
   }
   users.sort((a, b) => a.uid - b.uid);
 
-  const hidden = new Set(await readHidden());
-  const instances = await readInstances(uidNames);
-  for (const user of users) {
-    user.running = instances.filter((instance) => instance.user === user.name).length;
-    user.visible = !hidden.has(user.name);
-  }
+  const hidden = new Set((await readStore()).hidden);
+  for (const user of users) user.visible = !hidden.has(user.name);
 
   const root = selfUid === 0;
   const sudoNoPass = root || (await sudoAllows(probe));
-  const dshBin = process.argv[1] ?? 'dsh';
   return {
     host: hostname(),
     now: new Date().toISOString(),
-    port: settings.port,
     self: {
       user: uidNames.get(selfUid) ?? `uid:${selfUid}`,
       uid: selfUid,
@@ -260,156 +574,16 @@ async function snapshot(settings, probe) {
     privilege: {
       root,
       sudoNoPass,
-      canLaunch: root || sudoNoPass,
+      canSwitch: root || sudoNoPass,
       reason: root
-        ? 'this process runs as root, so it can start an instance under another account'
+        ? 'this process runs as root, so commands can drop to any local account'
         : sudoNoPass
           ? 'passwordless sudo is available for this account'
-          : 'this process is a normal login and has no passwordless sudo, so it cannot change uid by itself',
+          : 'this process is a normal login and cannot change uid by itself',
     },
-    dshBin,
-    dshBinPrivate: isInsideHome(dshBin),
+    selected: selected === null ? null : selected.name,
     users,
-    instances,
   };
-}
-
-/**
- * Find the port of an instance already serving the Web UI for one account.
- * @param state - snapshot payload.
- * @param name - account name.
- * @returns the port, or undefined when no instance advertises one.
- */
-function livePortOf(state, name) {
-  const live = state.instances.find((instance) => instance.user === name && typeof instance.port === 'number');
-  return live === undefined ? undefined : live.port;
-}
-
-/**
- * Build the paste-ready switch commands for one account.
- * @param state - snapshot payload.
- * @param user - the candidate account.
- * @returns the plan payload.
- */
-function planFor(state, user) {
-  const dshHome = join(user.home, '.dsh');
-  const launch = `${state.dshBin} web --port ${state.port} --no-open`;
-  const steps = [
-    {
-      id: 'launch',
-      title: 'run a separate Harness instance as this account',
-      command: `sudo -u ${user.name} -H env DSH_HOME=${dshHome} ${launch}`,
-    },
-    {
-      id: 'shell',
-      title: 'open a login shell for this account, then start it there',
-      command: `sudo -iu ${user.name}`,
-      followUp: launch,
-    },
-    {
-      id: 'attach',
-      title: 'open that account\u2019s UI once the instance is listening',
-      command: `xdg-open http://127.0.0.1:${state.port}/  # from a graphical session`,
-    },
-  ];
-
-  const warnings = [];
-  if (state.dshBinPrivate) {
-    warnings.push(
-      `the Harness binary is ${state.dshBin}, which sits inside a private home directory; another account usually cannot execute it. A shared install (for example under /opt) removes this step.`,
-    );
-  }
-  if (user.dshHomeState === 'missing') warnings.push(`${dshHome} does not exist yet; the first start creates it.`);
-  if (user.dshHomeState === 'denied') warnings.push(`${dshHome} cannot be inspected from this account.`);
-  if (user.homeState === 'denied') warnings.push(`${user.home} cannot be inspected from this account.`);
-  if (user.running > 0) warnings.push(`this account already has ${user.running} Harness instance(s) running; check their ports before starting another.`);
-  if (user.name !== state.self.user) warnings.push('sessions, credentials, and the workspace stay private to each account; only code placed in a shared path is common to both.');
-
-  return { user: user.name, port: state.port, steps, warnings, canLaunch: state.privilege.canLaunch };
-}
-
-/**
- * Start one detached instance under another account, and report where it listens.
- * @param state - snapshot payload.
- * @param user - target account.
- * @param settings - normalized settings.
- * @returns the launch outcome.
- */
-async function launch(state, user, settings) {
-  const session = `dsh-${user.name}`;
-  const dshHome = join(user.home, '.dsh');
-  const argv = [
-    'tmux',
-    'new-session',
-    '-d',
-    '-s',
-    session,
-    '--',
-    'sudo',
-    '-u',
-    user.name,
-    '-H',
-    'env',
-    `DSH_HOME=${dshHome}`,
-    state.dshBin,
-    'web',
-    '--port',
-    String(settings.port),
-    '--no-open',
-  ];
-  const result = await runFile(argv[0], argv.slice(1));
-  if (result.code !== 0) {
-    return {
-      ok: false,
-      code: 'launch-failed',
-      message: result.stderr.trim() || result.stdout.trim() || `tmux exited with code ${result.code}`,
-    };
-  }
-  const url = await printedUrl(session, settings.port);
-  return {
-    ok: true,
-    session,
-    url,
-    message: url === undefined ? `started ${session}; its sign-in link is in the tmux pane of that account` : `started ${session}`,
-  };
-}
-
-/**
- * Wait for a freshly started instance to print its own authenticated URL.
- *
- * A Harness signs its browser URL with the secret of the home it runs from, so
- * the only way to obtain another account's link is to read what it printed.
- * @param session - tmux session name.
- * @param port - port the instance was told to use.
- * @returns the printed URL, or undefined when it has not appeared yet.
- */
-async function printedUrl(session, port) {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    const pane = await runFile('tmux', ['capture-pane', '-p', '-t', session, '-S', '-80']);
-    if (pane.code !== 0) continue;
-    const found = /http:\/\/127\.0\.0\.1:(\d+)\/\S*/.exec(pane.stdout);
-    if (found !== null && Number(found[1]) === port) return found[0];
-  }
-  return undefined;
-}
-
-/**
- * Run one file without a shell, never throwing.
- * @param file - executable.
- * @param args - argument vector.
- * @returns exit code and captured output.
- */
-function runFile(file, args) {
-  return new Promise((resolve) => {
-    execFile(file, args, { timeout: 5000, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => {
-      resolve({
-        code: error === null || error === undefined ? 0 : typeof error.code === 'number' ? error.code : 1,
-        stdout: typeof stdout === 'string' ? stdout : '',
-        stderr: typeof stderr === 'string' ? stderr : error instanceof Error ? error.message : '',
-      });
-    });
-  });
 }
 
 /**
@@ -428,9 +602,9 @@ async function sudoAllows(probe) {
 
 /**
  * Resolve the switcher's own state file inside this Harness home.
- * @returns absolute path to the visibility file.
+ * @returns absolute path to the store.
  */
-function visibilityFile() {
+function storeFile() {
   const home = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME.trim() !== ''
     ? process.env.DSH_HOME.trim()
     : join(homedir(), '.dsh');
@@ -438,30 +612,36 @@ function visibilityFile() {
 }
 
 /**
- * Read the accounts the user chose to hide. A missing or damaged file means
- * "nothing hidden", never a failure.
- * @returns hidden account names.
+ * Read the persisted selection and hidden set. A missing or damaged file means
+ * "no selection, nothing hidden", never a failure.
+ * @returns hidden names and the selected account name.
  */
-async function readHidden() {
+async function readStore() {
   try {
-    const parsed = JSON.parse(await readFile(visibilityFile(), 'utf8'));
-    const hidden = parsed !== null && typeof parsed === 'object' ? parsed.hidden : undefined;
-    return Array.isArray(hidden) ? hidden.filter((name) => typeof name === 'string') : [];
+    const parsed = JSON.parse(await readFile(storeFile(), 'utf8'));
+    const hidden = parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.hidden)
+      ? parsed.hidden.filter((name) => typeof name === 'string')
+      : [];
+    const selected = parsed !== null && typeof parsed === 'object' && typeof parsed.selected === 'string'
+      ? parsed.selected
+      : null;
+    return { hidden, selected };
   } catch {
-    return [];
+    return { hidden: [], selected: null };
   }
 }
 
 /**
- * Persist the hidden set with a same-directory rename, so a reader never sees a
+ * Persist the store with a same-directory rename, so a reader never sees a
  * half-written file.
- * @param hidden - account names to hide.
+ * @param store - hidden names and selected account.
  */
-async function writeHidden(hidden) {
-  const file = visibilityFile();
+async function writeStore(store) {
+  const file = storeFile();
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify({ hidden }, null, 2)}\n`, { mode: 0o600 });
+  const body = { hidden: store.hidden, selected: store.selected };
+  await writeFile(temp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
   await rename(temp, file);
 }
 
@@ -543,70 +723,21 @@ async function inspectPath(path) {
 }
 
 /**
- * Scan /proc for Harness instances already serving the Web UI.
- * @param uidNames - uid to account name map.
- * @returns one entry per instance this account may see.
+ * Run one file without a shell, never throwing.
+ * @param file - executable.
+ * @param args - argument vector.
+ * @returns exit code and captured output.
  */
-async function readInstances(uidNames) {
-  let pids;
-  try {
-    pids = (await readdir('/proc')).filter((name) => /^\d+$/.test(name));
-  } catch {
-    return [];
-  }
-  const found = [];
-  for (const pid of pids) {
-    let argv;
-    try {
-      argv = (await readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter((part) => part !== '');
-    } catch {
-      continue;
-    }
-    if (argv.length === 0) continue;
-    const joined = argv.join(' ');
-    if (!joined.includes('dsh') || !/(^|\s)web(\s|$)/.test(joined)) continue;
-    let uid;
-    try {
-      uid = (await stat(`/proc/${pid}`)).uid;
-    } catch {
-      continue;
-    }
-    found.push({
-      pid: Number(pid),
-      uid,
-      user: uidNames.get(uid) ?? `uid:${uid}`,
-      port: portOf(argv),
-      args: joined.length > 400 ? `${joined.slice(0, 400)}\u2026` : joined,
+function runFile(file, args) {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout: 5000, maxBuffer: 64 * 1024 }, (error, stdout, stderr) => {
+      resolve({
+        code: error === null || error === undefined ? 0 : typeof error.code === 'number' ? error.code : 1,
+        stdout: typeof stdout === 'string' ? stdout : '',
+        stderr: typeof stderr === 'string' ? stderr : error instanceof Error ? error.message : '',
+      });
     });
-  }
-  return found;
-}
-
-/**
- * Extract an explicit `--port` from a process argument vector.
- * @param argv - process arguments.
- * @returns the port, or undefined when the instance used the default.
- */
-function portOf(argv) {
-  for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === '--port' && index + 1 < argv.length) {
-      const value = Number(argv[index + 1]);
-      if (Number.isInteger(value)) return value;
-    }
-    const match = /^--port=(\d+)$/.exec(argv[index]);
-    if (match !== null) return Number(match[1]);
-  }
-  return undefined;
-}
-
-/**
- * Whether a path sits inside a home directory, which makes it unreadable to
- * other accounts on most distributions.
- * @param path - the path to test.
- * @returns whether it looks like a private-home path.
- */
-function isInsideHome(path) {
-  return /^\/(home|Users)\/[^/]+\//.test(path);
+  });
 }
 
 /**

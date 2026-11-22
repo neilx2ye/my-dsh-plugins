@@ -8,10 +8,12 @@
 #     identity titled after that identity;
 #   - the client replaces the Workspace/Session browser with the identity list
 #     and enters an identity's newest conversation when it is clicked;
-#   - the `personal` preset replaces the coding-agent persona for sessions that
-#     choose it, and is the default for sessions that name none;
+#   - the `personal` preset replaces the coding-agent persona for identity and
+#     group conversations. It is not a selectable workspace mode: the Host half
+#     hides it from the preset roster and refuses it outside identity homes, so
+#     a workspace Session always keeps an ordinary preset;
 #   - the profile's user patch still applies last: a profile that explicitly
-#     pins another default preset keeps it.
+#     pins a default preset keeps it.
 #
 # Every file this plugin owns lives under the profile this layer belongs to
 # (`<profile>/personal-agent/`). No device-wide setting is touched.
@@ -34,12 +36,14 @@
           includeInPrompt: true
           maxBytes: 6000
 
-# Sessions created without a named preset resolve this default. A user patch
-# that already pins a default wins, because the profile layer applies last.
+# Sessions created without a named preset resolve this default. Personal is a
+# mode for identity conversations only, so it is never the default for a
+# workspace Session; the bundle's Host half also refuses it outside identity and
+# group homes.
 - id: agent-preset-registry
   name: '@deepseek-ai/dsh-agent-preset-registry'
   config:
-    default: personal
+    default: standard
 
 - insert:
     - id: preset-personal

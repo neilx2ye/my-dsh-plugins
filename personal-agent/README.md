@@ -267,12 +267,22 @@ project-shaped pieces (no `AGENTS.md` loader, no code-review plan mode), with a
 static persona that describes a personal agent rather than a coding agent. The
 per-identity prompt section supplies the name, role, and boundaries.
 
-The preset becomes the profile default when the profile patch does not pin
-another preset. A profile that already pins a default keeps it, because the
-user's profile patch applies after bundle layers. In that case, opening an
-identity from the sidebar or manager still names the personal preset
+`personal` is reserved for identity and group conversations. It is not a
+selectable workspace mode:
+
+- the bundle's Host half removes it from the `agentPresets/list` roster, so it
+  never appears in the new-session chip or the settings list;
+- selecting it (or creating a Session with it) for any working directory that
+  is not an identity home or a group home is refused with
+  `Personal 模式只用于个人身份会话，工作区会话不能使用。`;
+- the bundle's deployment default is `standard`, and a workspace Session created
+  without a named preset falls back to `standard` whenever the profile default
+  would resolve to `personal`.
+
+Opening an identity from the sidebar or manager still names the personal preset
 explicitly; the identity and memory sections apply to every conversation in the
-profile whichever preset it runs.
+profile whichever preset it runs. A profile patch may pin another default for
+workspace conversations; it cannot re-enable Personal there.
 
 ## Tools
 
@@ -492,7 +502,12 @@ DSH_HOME=/tmp/pa-check dsh --profile check --dump-config | grep -A4 'personal-ag
   pending fresh-conversation marker and waits until the current Session is idle.
   Project and group conversations are never auto-switched. Opening history
   suppresses the switch.
-- **Preset default can be pinned.** See “Agent preset” above.
+- **A profile patch cannot re-enable Personal for workspaces.** The default can
+  be pinned, but the personal preset stays hidden and refused outside identity
+  and group homes. Sessions already started under it keep it, because a
+  composition cannot be swapped after the first turn.
+- **The roster hide is host-side.** A client that read the roster before the
+  plugin loaded keeps its copy until the next refresh.
 - **External memory edits wait for a restart.** The page and the `remember` tool
   share the in-process cache; a hand-edited `memory.md` is read at the next
   start.

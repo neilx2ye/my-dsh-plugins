@@ -4,8 +4,8 @@
  * push service, and shows one system notification. The same worker accepts a
  * `notify` message from a controlled page: that is the page-local fallback used
  * when no push subscription could be obtained. A notification is suppressed
- * while a controlled window is visibly open, unless the payload asks to force
- * it (the "send test" action).
+ * while a controlled window is visible AND focused, unless the payload asks to
+ * force it (the "send test" action).
  */
 
 const FALLBACK_TITLE = 'DSH · 任务完成';
@@ -38,12 +38,17 @@ function readPayload(event) {
 }
 
 /**
- * Whether a controlled window is currently visible.
- * @returns true when at least one page is visibly open.
+ * Whether a controlled window is both visible and focused.
+ *
+ * A visible but unfocused page — another app in front, another browser window,
+ * or the tab merely sitting in the background of its own window — must not
+ * swallow the notification. Only the page the user is actually looking at and
+ * typing in counts as "already showing the conversation".
+ * @returns true when at least one page is visible and focused.
  */
-async function hasVisibleWindow() {
+async function hasFocusedWindow() {
   const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  return windows.some((client) => client.visibilityState === 'visible');
+  return windows.some((client) => client.visibilityState === 'visible' && client.focused === true);
 }
 
 /**
@@ -93,11 +98,11 @@ async function closeGroup(payload) {
 }
 
 /**
- * Show one notification unless a visible page already shows the conversation.
+ * Show one notification unless a focused page already shows the conversation.
  * @param payload - notification fields from the Host.
  */
 async function show(payload) {
-  if (payload.force !== true && (await hasVisibleWindow())) {
+  if (payload.force !== true && (await hasFocusedWindow())) {
     await report('suppressed', payload);
     return;
   }

@@ -1,9 +1,9 @@
 {
   "name": "@local/user-switcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Inspect the Linux identity this Harness runs as, list local accounts, and prepare or launch a DSH instance under another system user.",
+  "description": "Choose the Linux account every shell command runs as, and open each account its own DSH instance, from the sidebar.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

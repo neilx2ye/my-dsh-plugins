@@ -1,13 +1,14 @@
 /**
  * Browser half of the task-completion Web Push bundle.
  *
- * One sidebar-foot bell. The popover owns the whole permission flow: it asks
- * for notification permission, registers the root Service Worker, subscribes
- * through the Push API with the Host's VAPID key, and hands the subscription
- * back to the Host. While a subscription exists, completion notifications
- * arrive through Web Push (even with the tab closed). When a browser cannot
- * obtain a push subscription, a hidden page falls back to the Host's SSE
- * channel and asks the same Service Worker to show the notification instead.
+ * One row inside the sidebar account menu ("More"). The popover it opens owns
+ * the whole permission flow: it asks for notification permission, registers
+ * the root Service Worker, subscribes through the Push API with the Host's
+ * VAPID key, and hands the subscription back to the Host. While a subscription
+ * exists, completion notifications arrive through Web Push (even with the tab
+ * closed). When a browser cannot obtain a push subscription, a hidden page
+ * falls back to the Host's SSE channel and asks the same Service Worker to
+ * show the notification instead.
  *
  * Routes are document-relative so a prefix-mounted UI keeps working.
  */
@@ -31,10 +32,14 @@ window.__ModuleLoader__.load({
     const WIDTH = 312;
     /** Local opt-in flag; absent means the user never enabled this plugin. */
     const ENABLED_KEY = 'web-push-notify:enabled';
+    /** Window event that opens the settings surface above an anchor element. */
+    const OPEN_EVENT = 'web-push-notify:open';
+    /** Local preference for notifications while this page is focused. */
+    const VIEWING_KEY = 'web-push-notify:notify-while-viewing';
 
     /** English dictionary; also the fallback for unknown locales. */
     const EN = {
-      'footer.title': 'Task notifications',
+      'menu.item': 'Task notifications',
       'pop.title': 'Task notifications',
       'pop.subtitle': 'Web Push · Push API + Service Worker',
       'status.loading': 'Checking…',
@@ -50,8 +55,10 @@ window.__ModuleLoader__.load({
       'action.disable': 'Turn off',
       'action.test': 'Send a test notification',
       'action.working': 'Working…',
-      'hint.visible': 'Quiet while this page is visible.',
+      'hint.visible': 'Quiet while you are viewing this page; other windows still notify.',
       'hint.closed': 'Web Push still works after the tab is closed.',
+      'hint.foreground': 'Notifications also arrive while this page is focused.',
+      'toggle.foreground': 'Notify while viewing this page',
       'hint.fallback': 'No push subscription: notifications only arrive while this tab is open but hidden.',
       'hint.content': 'Each notification includes the session, task, result, duration, and usage.',
       'error.unsupported': 'This browser does not support Service Worker + Push API.',
@@ -66,13 +73,13 @@ window.__ModuleLoader__.load({
       'last.delivery': 'Last push: {delivered}/{attempted} delivered',
       'last.received': 'Last push: received by the browser.',
       'last.shown': 'Last push: notification shown.',
-      'last.suppressed': 'Last push: quiet because this page is visible.',
+      'last.suppressed': 'Last push: quiet because you were viewing this page.',
       'last.error': 'Last push failed: {message}',
     };
 
     /** Simplified Chinese dictionary. */
     const ZH = {
-      'footer.title': '任务通知',
+      'menu.item': '任务通知',
       'pop.title': '任务通知',
       'pop.subtitle': 'Web Push · Push API + Service Worker',
       'status.loading': '检查中…',
@@ -88,8 +95,10 @@ window.__ModuleLoader__.load({
       'action.disable': '关闭通知',
       'action.test': '发送测试通知',
       'action.working': '处理中…',
-      'hint.visible': '页面在前台可见时保持安静。',
+      'hint.visible': '正在查看此页面时保持安静；切到其它窗口仍会通知。',
       'hint.closed': '关闭标签页后仍可通过 Web Push 收到。',
+      'hint.foreground': '即使正在查看此页面也会通知。',
+      'toggle.foreground': '正在查看页面时也通知',
       'hint.fallback': '没有推送订阅：仅在标签页打开但不可见时通知。',
       'hint.content': '每条通知包含：会话、任务、结果、耗时与用量。',
       'error.unsupported': '浏览器不支持 Service Worker + Push API。',
@@ -104,21 +113,15 @@ window.__ModuleLoader__.load({
       'last.delivery': '上次推送：{delivered}/{attempted} 送达',
       'last.received': '上次推送：浏览器已收到。',
       'last.shown': '上次推送：已显示通知。',
-      'last.suppressed': '上次推送：页面在前台，已静默。',
+      'last.suppressed': '上次推送：正在查看页面，已静默。',
       'last.error': '上次推送失败：{message}',
     };
 
     /** Popover chrome. Only theme tokens are used, so light and dark both work. */
     const STYLE = `
-.wpn-trigger{display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-width:0;height:32px;
-  padding:0 8px;margin:0;border:0;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);
-  font:inherit;font-size:13px;line-height:1;text-align:left;cursor:pointer}
-.wpn-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary,#e7e8ea)}
-.wpn-trigger:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px}
-.wpn-trigger svg{flex:none}
-.wpn-trigger .lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wpn-dot{fill:var(--dsw-alias-state-success-primary,#3fb950)}
 
+.wpn-pop:focus{outline:none}
 .wpn-pop{position:fixed;z-index:9500;box-sizing:border-box;width:312px;padding:12px;
   background:var(--dsw-alias-bg-overlay,#1c1e22);color:var(--dsw-alias-label-primary,#e7e8ea);
   border:1px solid var(--dsw-alias-border-l2,#3a3d44);border-radius:10px;
@@ -144,6 +147,10 @@ window.__ModuleLoader__.load({
 .wpn-note.err{color:var(--dsw-alias-state-error-primary,#f85149)}
 .wpn-note.ok{color:var(--dsw-alias-state-success-primary,#3fb950)}
 .wpn-actions{display:flex;gap:7px;margin-top:11px}
+.wpn-toggle{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;line-height:1.4;
+  color:var(--dsw-alias-label-primary,#e7e8ea);cursor:pointer}
+.wpn-toggle input{flex:none;width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary,#4c8dff);cursor:pointer}
+.wpn-toggle span{min-width:0}
 .wpn-btn{flex:1;box-sizing:border-box;height:30px;padding:0 10px;border-radius:7px;font:inherit;font-size:12.5px;
   line-height:1;cursor:pointer;border:1px solid transparent}
 .wpn-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px}
@@ -250,6 +257,32 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * Read the foreground-notification preference. Absent means on: the plugin
+     * should not silently swallow a completion because the page happens to be
+     * focused.
+     * @returns true when focused pages should still show the notification.
+     */
+    function readNotifyWhileViewing() {
+      try {
+        return window.localStorage.getItem(VIEWING_KEY) !== '0';
+      } catch {
+        return true;
+      }
+    }
+
+    /**
+     * Persist the foreground-notification preference.
+     * @param value - true to notify while this page is focused.
+     */
+    function writeNotifyWhileViewing(value) {
+      try {
+        window.localStorage.setItem(VIEWING_KEY, value ? '1' : '0');
+      } catch {
+        // A browser that blocks storage still keeps the in-memory state.
+      }
+    }
+
     /** Bell glyph drawn with the current text color. */
     function BellIcon({ on }) {
       return h(
@@ -280,6 +313,7 @@ window.__ModuleLoader__.load({
     function useNotifications(tr, currentLocale) {
       const [phase, setPhase] = React.useState('loading');
       const [enabled, setEnabled] = React.useState(readEnabled);
+      const [notifyWhileViewing, setNotifyWhileViewingState] = React.useState(readNotifyWhileViewing);
       const [permission, setPermission] = React.useState('default');
       const [subscribed, setSubscribed] = React.useState(false);
       const [count, setCount] = React.useState(0);
@@ -288,6 +322,7 @@ window.__ModuleLoader__.load({
       const [hostError, setHostError] = React.useState(null);
       const [busy, setBusy] = React.useState(false);
       const [note, setNote] = React.useState(null);
+      const preferenceSynced = React.useRef(false);
 
       const refresh = React.useCallback(async () => {
         if (!supported()) {
@@ -302,14 +337,16 @@ window.__ModuleLoader__.load({
         } catch {
           registration = undefined;
         }
-        let active = false;
+        let subscription = null;
         if (registration !== undefined && registration !== null) {
           try {
-            active = (await registration.pushManager.getSubscription()) !== null;
+            subscription = await registration.pushManager.getSubscription();
           } catch {
-            active = false;
+            subscription = null;
           }
         }
+        const active = subscription !== null;
+        if (active) setNotifyWhileViewingState(readNotifyWhileViewing());
         const host = await requestJson(STATE_URL).catch(() => null);
         setSubscribed(active);
         setCount(typeof host?.data?.subscriptions === 'number' ? host.data.subscriptions : 0);
@@ -317,7 +354,15 @@ window.__ModuleLoader__.load({
         setLastAck(host?.data?.lastAck ?? null);
         setHostError(host === null || !host.ok ? host?.data?.message ?? 'HTTP ' + String(host?.status ?? 0) : null);
         setPhase('ready');
-      }, []);
+        if (active && !preferenceSynced.current) {
+          preferenceSynced.current = true;
+          void postJson(SUBSCRIBE_URL, {
+            subscription: subscription.toJSON(),
+            locale: currentLocale(),
+            notifyWhileViewing: readNotifyWhileViewing(),
+          }).catch(() => {});
+        }
+      }, [currentLocale]);
 
       React.useEffect(() => {
         void refresh();
@@ -442,7 +487,9 @@ window.__ModuleLoader__.load({
           const saved = await postJson(SUBSCRIBE_URL, {
             subscription: subscription.toJSON(),
             locale: currentLocale(),
+            notifyWhileViewing: readNotifyWhileViewing(),
           });
+          preferenceSynced.current = true;
           if (!saved.ok) throw new Error(saved.data?.message ?? `HTTP ${saved.status}`);
           setSubscribed(true);
           setCount(typeof saved.data?.subscriptions === 'number' ? saved.data.subscriptions : 1);
@@ -509,9 +556,32 @@ window.__ModuleLoader__.load({
         }
       }, [clearNotifications, refresh, tr]);
 
+      const setNotifyWhileViewing = React.useCallback(
+        async (value) => {
+          writeNotifyWhileViewing(value);
+          setNotifyWhileViewingState(value);
+          try {
+            const registration = await navigator.serviceWorker.getRegistration();
+            const subscription = await registration?.pushManager.getSubscription();
+            if (subscription !== null && subscription !== undefined) {
+              preferenceSynced.current = true;
+              await postJson(SUBSCRIBE_URL, {
+                subscription: subscription.toJSON(),
+                locale: currentLocale(),
+                notifyWhileViewing: value,
+              }).catch(() => {});
+            }
+          } catch {
+            // The next subscribe or refresh retries the preference sync.
+          }
+        },
+        [currentLocale],
+      );
+
       return {
         phase,
         enabled,
+        notifyWhileViewing,
         permission,
         subscribed,
         count,
@@ -524,46 +594,63 @@ window.__ModuleLoader__.load({
         enable,
         disable,
         test,
+        setNotifyWhileViewing,
       };
     }
 
     /**
-     * Build the footer trigger and its popover.
+     * Build the settings surface. It stays mounted for the whole session and
+     * renders only while the account menu asks it to open; the menu row passes
+     * the account trigger as its anchor so the card floats above the sidebar
+     * footer the same way it used to float above its own bell row.
      * @param tr - translate function bound to this namespace.
      */
-    function makeTrigger(tr, currentLocale) {
-      return function TaskNotifyTrigger(props) {
+    function makeLayer(tr, currentLocale) {
+      return function TaskNotifyLayer() {
         const notify = useNotifications(tr, currentLocale);
         const [open, setOpen] = React.useState(false);
         const [anchor, setAnchor] = React.useState(null);
-        const buttonRef = React.useRef(null);
+        const anchorRef = React.useRef(null);
+        const popoverRef = React.useRef(null);
 
-        const close = React.useCallback(() => {
+        const close = React.useCallback((restoreFocus) => {
+          const previous = anchorRef.current;
           setOpen(false);
           setAnchor(null);
+          anchorRef.current = null;
+          if (restoreFocus === true && previous !== null) previous.focus();
         }, []);
 
-        const toggle = React.useCallback(() => {
-          setOpen((value) => {
-            if (value) {
-              setAnchor(null);
-              return false;
-            }
-            setAnchor(buttonRef.current);
+        React.useEffect(() => {
+          if (open && popoverRef.current !== null) popoverRef.current.focus();
+        }, [open]);
+
+        React.useEffect(() => {
+          const onOpen = (event) => {
+            const next = event !== null && typeof event === 'object' ? event.detail?.anchor : null;
+            anchorRef.current = next instanceof Element ? next : null;
+            setAnchor(anchorRef.current);
+            setOpen(true);
             void notify.refresh();
-            return true;
-          });
+          };
+          window.addEventListener(OPEN_EVENT, onOpen);
+          return () => window.removeEventListener(OPEN_EVENT, onOpen);
         }, [notify]);
 
         React.useEffect(() => {
           if (!open) return undefined;
           const onPointerDown = (event) => {
-            if (anchor !== null && anchor.contains(event.target)) return;
+            if (anchor !== null && anchor.contains(event.target)) {
+              // The trigger owns the account menu; dismiss the card so that menu
+              // is not left covered when the user reopens it.
+              close();
+              return;
+            }
             if (event.target instanceof Element && event.target.closest('.wpn-pop') !== null) return;
             close();
           };
           const onKeyDown = (event) => {
-            if (event.key === 'Escape') close();
+            if (event.key === 'Escape') close(true);
           };
           const onResize = () => close();
           document.addEventListener('mousedown', onPointerDown, true);
@@ -674,7 +761,7 @@ window.__ModuleLoader__.load({
 
         const hints = [];
         if (notify.subscribed) {
-          hints.push(tr('hint.visible'));
+          hints.push(notify.notifyWhileViewing ? tr('hint.foreground') : tr('hint.visible'));
           hints.push(tr('hint.closed'));
           hints.push(tr('hint.content'));
         } else if (notify.enabled && notify.permission === 'granted') {
@@ -685,6 +772,8 @@ window.__ModuleLoader__.load({
           h(
             'div',
             {
+              ref: popoverRef,
+              tabIndex: -1,
               className: 'wpn-pop',
               role: 'dialog',
               'aria-label': tr('pop.title'),
@@ -714,6 +803,19 @@ window.__ModuleLoader__.load({
             notify.note !== null
               ? h('div', { className: `wpn-note callout ${notify.note.kind}` }, notify.note.text)
               : null,
+            h('div', { className: 'wpn-sep' }),
+            h(
+              'label',
+              { className: 'wpn-toggle' },
+              h('input', {
+                type: 'checkbox',
+                checked: notify.notifyWhileViewing,
+                onChange: (event) => {
+                  void notify.setNotifyWhileViewing(event.target.checked);
+                },
+              }),
+              h('span', null, tr('toggle.foreground')),
+            ),
             hints.length > 0
               ? h(
                   'div',
@@ -743,31 +845,119 @@ window.__ModuleLoader__.load({
                   : null,
           );
 
-        return h(
-          React.Fragment,
-          null,
-          h(
-            'button',
-            {
-              ref: buttonRef,
-              type: 'button',
-              className: 'wpn-trigger',
-              onClick: toggle,
-              title: tr('footer.title'),
-              'aria-label': tr('footer.title'),
-              'aria-haspopup': 'dialog',
-              'aria-expanded': open,
-            },
-            h(BellIcon, { on: notify.enabled && notify.permission === 'granted' }),
-            props.wide === false ? null : h('span', { className: 'lbl' }, tr('footer.title')),
-          ),
-          open && anchor !== null ? ReactDOM.createPortal(popover(), document.body) : null,
-        );
+        return open && anchor !== null ? ReactDOM.createPortal(popover(), document.body) : null;
+      };
+    }
+
+    /** Bell glyph markup for the cloned native menu row. */
+    function bellMarkup(on) {
+      return '<svg viewBox="0 0 16 16" width="16" height="16" data-icon="web-push-notify-bell" aria-hidden="true" focusable="false">'
+        + '<path d="M8 1.6a4.1 4.1 0 0 0-4.1 4.1v2.4L2.6 10.4a.55.55 0 0 0 .47.85h9.86a.55.55 0 0 0 .47-.85L12.1 8.1V5.7A4.1 4.1 0 0 0 8 1.6Z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>'
+        + '<path d="M6.4 13.1a1.7 1.7 0 0 0 3.2 0" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>'
+        + (on ? '<circle cx="12.7" cy="3.3" r="2.3" fill="var(--dsw-alias-state-success-primary,#3fb950)"/>' : '')
+        + '</svg>';
+    }
+
+    /**
+     * Decorate the rendered sidebar account menu with one extra row.
+     *
+     * The account menu is a product-owned menu without a slot for extra rows,
+     * so this follows its rendered DOM instead: it recognizes the menu by its
+     * Settings and Feedback rows, clones the Settings row to inherit the exact
+     * native item markup and styling, and swaps in the bell glyph and label.
+     * The row exists only while a menu opening is rendered, and its click
+     * closes that menu and asks the persistent settings layer to open above the
+     * account trigger.
+     *
+     * @param tr - translate function bound to this namespace.
+     * @returns disposer removing the observer and any injected rows.
+     */
+    function installMenuEntry(tr) {
+      const MENU_SELECTOR = '[role="menu"]';
+      const SETTINGS_ICON = 'use[href="#dsw-icon-settings-outline-medium"]';
+      const FEEDBACK_ICON = 'use[href="#dsw-icon-paper-plane-outline-medium"]';
+      const ENTRY_ATTR = 'data-web-push-notify-entry';
+
+      const accountTrigger = () => document.querySelector('button[aria-label="账号菜单"]');
+      const menuObservers = new Map();
+
+      const decorate = (menu) => {
+        if (!menu.isConnected) return;
+        if (!menuObservers.has(menu)) {
+          const watcher = new MutationObserver(() => decorate(menu));
+          watcher.observe(menu, { childList: true, subtree: true });
+          menuObservers.set(menu, watcher);
+        }
+        if (menu.querySelector(`[${ENTRY_ATTR}]`) !== null) return;
+        const buttons = Array.from(menu.querySelectorAll('button[role="menuitem"]'));
+        const settings = buttons.find((button) => button.querySelector(SETTINGS_ICON) !== null);
+        const feedback = buttons.find((button) => button.querySelector(FEEDBACK_ICON) !== null);
+        if (settings === undefined || feedback === undefined) return;
+        const wrapper = settings.parentElement;
+        if (wrapper === null || !menu.contains(wrapper)) return;
+        const button = settings.cloneNode(true);
+        const icon = button.querySelector('span[class*="itemIcon"]') ?? button.querySelector('span');
+        const label = button.querySelector('span[class*="itemLabel"]') ?? button.lastElementChild;
+        if (icon === null || label === null) return;
+
+        const item = document.createElement('div');
+        item.setAttribute(ENTRY_ATTR, '');
+        item.className = wrapper.className;
+        const on = readEnabled() && (typeof Notification === 'undefined' || Notification.permission === 'granted');
+        icon.innerHTML = bellMarkup(on);
+        label.textContent = tr('menu.item');
+        button.setAttribute('aria-label', tr('menu.item'));
+        button.setAttribute('title', tr('menu.item'));
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const anchor = accountTrigger();
+          // The account Menu owns its open state; its trigger toggles it shut.
+          if (anchor !== null) anchor.click();
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { anchor } }));
+          }, 0);
+        });
+        item.appendChild(button);
+        wrapper.after(item);
+      };
+
+      const scan = (root) => {
+        if (!(root instanceof Element)) return;
+        if (root.matches(MENU_SELECTOR)) decorate(root);
+        for (const menu of root.querySelectorAll(MENU_SELECTOR)) decorate(menu);
+      };
+      const release = (root) => {
+        if (!(root instanceof Element)) return;
+        const menus = root.matches(MENU_SELECTOR) ? [root] : [];
+        for (const menu of root.querySelectorAll(MENU_SELECTOR)) menus.push(menu);
+        for (const menu of menus) {
+          const watcher = menuObservers.get(menu);
+          if (watcher === undefined) continue;
+          watcher.disconnect();
+          menuObservers.delete(menu);
+        }
+      };
+      const observer = new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) scan(node);
+          for (const node of record.removedNodes) release(node);
+        }
+      });
+      // Menus portal directly onto <body>; watching body children keeps this
+      // decorator off the chat stream's own mutation traffic.
+      observer.observe(document.body, { childList: true });
+      for (const menu of document.querySelectorAll(MENU_SELECTOR)) decorate(menu);
+      return () => {
+        observer.disconnect();
+        for (const watcher of menuObservers.values()) watcher.disconnect();
+        menuObservers.clear();
+        for (const item of document.querySelectorAll(`[${ENTRY_ATTR}]`)) item.remove();
       };
     }
 
     return {
-      inject: ['slots', 'locale'],
+      inject: ['locale'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en: EN, zh: ZH }), 'web-push-notify: dictionaries');
         ctx.effect(() => {
@@ -831,18 +1021,24 @@ window.__ModuleLoader__.load({
           navigator.serviceWorker.addEventListener('message', onMessage);
           return () => navigator.serviceWorker.removeEventListener('message', onMessage);
         }, 'web-push-notify: open session');
-        ctx.slots.inject('sidebar.footer.action', () =>
-          ctx.slots.register(
-            {
-              name: 'sidebar.footer.action',
-              id: 'web-push-notify',
-              order: 30,
-              locale: NS,
-              label: () => tr('footer.title'),
-            },
-            makeTrigger(tr, currentLocale),
-          ),
-        );
+        /**
+         * The settings surface lives outside any slot: the account menu row is
+         * injected into the product menu, and this layer is the popover that
+         * row opens. Mounting it once keeps the notification hook alive across
+         * menu openings and gives the row a stable open target.
+         */
+        ctx.effect(() => {
+          const host = document.createElement('div');
+          host.setAttribute('data-web-push-notify-layer', '');
+          document.body.appendChild(host);
+          const root = ReactDOM.createRoot(host);
+          root.render(h(makeLayer(tr, currentLocale)));
+          return () => {
+            root.unmount();
+            host.remove();
+          };
+        }, 'web-push-notify: settings layer');
+        ctx.effect(() => installMenuEntry(tr), 'web-push-notify: account menu entry');
       },
     };
   },
