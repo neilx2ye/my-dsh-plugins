@@ -33,6 +33,10 @@ declares the same package name, and reports four states:
 A version column like `0.2.0 -> 0.1.0` means the repo is *ahead* of the installed
 package (a bump after the last install). That is expected; it is not a change to copy.
 
+One blind spot: a `link:` install that points at a directory *inside* this repository
+(for example `workspace-upload/`) is compared with itself and always reports `same`.
+Review such a plugin's edits with `git status` / `git diff` instead.
+
 ## 2. Copy and review
 
 After `--apply`, read `git diff`. Two rules that have bitten before:
