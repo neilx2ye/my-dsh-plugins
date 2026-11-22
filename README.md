@@ -6,9 +6,9 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | --- | --- | --- | --- |
 | `artifacts/` | `@local/dsh-artifacts` | 0.1.1 | Artifacts + canvas: HTML, SVG, charts, Mermaid, Markdown, and code the agent writes into a side panel with versions and editing |
 | `command-runner/` | `@local/command-runner` | 0.1.0 | Floating, tabbed shell window in DSH Web |
-| `codex-images/` | `@local/codex-images` | 0.1.0 | Project-scoped image gallery + `codex_image` tool |
+| `codex-images/` | `@local/codex-images` | 0.1.1 | Project-scoped image gallery + `codex_image` tool |
 | `git-explorer/` | `@local/git-explorer` | 0.5.2 | Git browser for the current workspace |
-| `mcp-settings/` | `@local/mcp-settings` | 0.1.0 | Manage MCP servers from DSH Web |
+| `mcp-settings/` | `@local/mcp-settings` | 0.1.1 | Manage MCP servers from DSH Web |
 | `user-switcher/` | `@local/user-switcher` | 0.2.0 | Linux: choose the account every Bash command runs as (`setpriv`), and open each account its own DSH instance with its own home |
 | `web-push-notify/` | `@local/web-push-notify` | 1.3.0 | Web Push task-completion notifications (Push API + Service Worker); notifies even while the page is in view, entry under **More** |
 | `personal-agent/` | `@local/personal-agent` | 0.5.0 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, plus selected multi-agent group chats; the `personal` preset is reserved for identity chats |
@@ -22,19 +22,19 @@ need neither git nor registry credentials — only HTTPS.
 ## Install on a device
 
 Open DSH Web → **Plugins** → **Add plugin** and paste one tarball URL per plugin
-(replace `<owner>/<repo>` and `v0.6.1` with the release you want):
+(replace `<owner>/<repo>` and `v0.6.2` with the release you want):
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-dsh-artifacts-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-command-runner-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-codex-images-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-git-explorer-0.5.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-mcp-settings-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-user-switcher-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-personal-agent-0.5.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-system-usage-1.0.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-workspace-upload-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-dsh-artifacts-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-command-runner-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-codex-images-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-git-explorer-0.5.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-mcp-settings-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-user-switcher-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-web-push-notify-1.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-personal-agent-0.5.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-system-usage-1.0.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-workspace-upload-0.1.0.tgz
 ```
 
 After each install click **Enable now**, then restart `dsh web` when the profile has no HMR.
@@ -43,16 +43,16 @@ CLI equivalent:
 
 ```bash
 dsh plugin --profile web add \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-dsh-artifacts-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-command-runner-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-codex-images-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-git-explorer-0.5.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-mcp-settings-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-user-switcher-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-personal-agent-0.5.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-system-usage-1.0.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.6.1/local-workspace-upload-0.1.0.tgz
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-dsh-artifacts-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-command-runner-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-codex-images-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-git-explorer-0.5.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-mcp-settings-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-user-switcher-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-web-push-notify-1.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-personal-agent-0.5.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-system-usage-1.0.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.6.2/local-workspace-upload-0.1.0.tgz
 ```
 
 Installing only records the dependency. To load a bundle, click **Enable now**, or append its
@@ -84,6 +84,11 @@ for the recommended `autoOpen: false` setting.
 Then on GitHub: **Releases → Draft a new release**, choose/create the tag, attach the
 `out/*.tgz` files, publish. Asset URLs follow the pattern above.
 
+## Sync with this machine
+
+See [SYNC.md](SYNC.md). `node scripts/scan.mjs` reports every installed `@local/*`
+bundle that differs from its directory here; `--apply` copies the package files in.
+
 ## Notes
 
 - **Personal agent profiles**: `@local/personal-agent` works in a profile created
@@ -103,13 +108,15 @@ Then on GitHub: **Releases → Draft a new release**, choose/create the tag, att
   working directory (2 GiB per file by default, `onConflict: rename`); no agent tool is added.
 - **First push quirk**: pushing a brand-new branch and its first `v*` tag in one
   `git push` does not start the workflow. Push the branch first, then the tag
-  (`git push -u origin main` then `git push origin v0.6.1`), or re-push the tag alone.
+  (`git push -u origin main` then `git push origin v0.6.2`), or re-push the tag alone.
 
 ## Layout
 
 ```
 .github/workflows/release.yml   tag push -> npm pack -> GitHub Release assets
 scripts/pack.sh                 packs every plugin that declares dsh.bundle
+scripts/scan.mjs                compares this repo with the installed profile
+SYNC.md                         the sync runbook (scan -> copy -> bump -> release)
 artifacts/                      plugin source (artifacts + canvas panel)
 command-runner/                 plugin source
 codex-images/                   plugin source

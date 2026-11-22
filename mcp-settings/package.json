@@ -1,6 +1,6 @@
 {
   "name": "@local/mcp-settings",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Configure MCP servers from Settings and connect their tools to the Harness.",
@@ -11,13 +11,14 @@
     "./icon": "./icon.svg"
   },
   "files": [
-    "index.js",
-    "lib/manager.js",
+    "README.md",
     "client.js",
     "cordis.patch.yml",
-    "locale/*.json",
     "icon.svg",
-    "README.md"
+    "index.js",
+    "lib/config.js",
+    "lib/manager.js",
+    "locale/*.json"
   ],
   "dsh": {
     "bundle": {

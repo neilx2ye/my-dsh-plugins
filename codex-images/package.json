@@ -1,6 +1,6 @@
 {
   "name": "@local/codex-images",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Browse the current project's Codex-generated images, manage them with the agent, and sign in to an isolated Codex account.",
@@ -11,18 +11,19 @@
     "./icon": "./icon.svg"
   },
   "files": [
-    "index.js",
-    "lib/project.js",
-    "lib/codex.js",
-    "lib/bridge.js",
-    "lib/cdn.js",
-    "lib/appserver.js",
-    "lib/exec.js",
+    "README.md",
     "client.js",
     "cordis.patch.yml",
-    "locale/*.json",
     "icon.svg",
-    "README.md"
+    "index.js",
+    "lib/appserver.js",
+    "lib/bridge.js",
+    "lib/cdn.js",
+    "lib/codex.js",
+    "lib/exec.js",
+    "lib/project.js",
+    "lib/sizes.js",
+    "locale/*.json"
   ],
   "dsh": {
     "bundle": {
