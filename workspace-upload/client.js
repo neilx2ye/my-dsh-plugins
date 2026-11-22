@@ -29,8 +29,6 @@ window.__ModuleLoader__.load({
     const PANEL_WIDTH = 360;
     /** Distance between the control and its panel. */
     const PANEL_GAP = 6;
-    /** How long a fully successful upload stays on screen. */
-    const AUTO_CLOSE_MS = 5000;
     /** How long a file drag may pause before its highlight clears. */
     const DRAG_IDLE_MS = 800;
 
@@ -63,6 +61,8 @@ window.__ModuleLoader__.load({
       statusQueued: 'Waiting',
       statusUploading: '{percent}%',
       statusSaving: 'Saving to the workspace…',
+      toastRenamed: 'Uploaded {count} files, some under a new name',
+      toastRenamedOne: 'Uploaded 1 file under a new name',
       statusDone: 'Uploaded',
       statusRenamed: 'Uploaded as {name}',
       statusReplaced: 'Replaced the existing file',
@@ -109,6 +109,8 @@ window.__ModuleLoader__.load({
       statusQueued: '等待上传',
       statusUploading: '{percent}%',
       statusSaving: '正在保存到工作区…',
+      toastRenamed: '已上传 {count} 个文件，部分使用了新名称',
+      toastRenamedOne: '已上传 1 个文件（使用了新名称）',
       statusDone: '已上传',
       statusRenamed: '已上传为 {name}',
       statusReplaced: '已替换同名文件',
@@ -578,7 +580,7 @@ window.__ModuleLoader__.load({
      * @returns {object} the control, its drop overlay, and the progress panel.
      */
     function UploadAction(props) {
-      const { t, sessionId, absolutePath } = props;
+      const { t, sessionId, absolutePath, notify } = props;
       const [items, setItems] = React.useState([]);
       const [notice, setNotice] = React.useState(null);
       const [scanning, setScanning] = React.useState(false);
@@ -597,7 +599,6 @@ window.__ModuleLoader__.load({
       const busyRef = React.useRef(false);
       const cancelRef = React.useRef(false);
       const aliveRef = React.useRef(true);
-      const autoCloseRef = React.useRef(null);
       const panelIdRef = React.useRef('');
       if (panelIdRef.current === '') panelIdRef.current = `workspace-upload-${Math.random().toString(36).slice(2, 8)}`;
       const sessionRef = React.useRef(sessionId);
@@ -684,8 +685,6 @@ window.__ModuleLoader__.load({
         busyRef.current = true;
         cancelRef.current = false;
         abortRef.current = null;
-        clearTimeout(autoCloseRef.current);
-        autoCloseRef.current = null;
         setNotice(null);
         setBusy(true);
         setOpen(true);
@@ -759,12 +758,26 @@ window.__ModuleLoader__.load({
           busyRef.current = false;
           if (aliveRef.current) {
             setBusy(false);
-            // A renamed, replaced, or uncreated folder needs a persistent cue, so
-            // only a clean batch closes itself.
-            if (failed === 0 && cancelledCount === 0 && renamed === 0 && mkdirFailed === 0) {
-              autoCloseRef.current = setTimeout(() => {
-                if (aliveRef.current) hide();
-              }, AUTO_CLOSE_MS);
+            // The panel is a live progress view, not a history: as soon as the
+            // batch ends, its rows are dropped and a toast carries the outcome.
+            setItems([]);
+            setNotice(null);
+            hide();
+            if (typeof notify === 'function') {
+              const uploaded = entries.length - failed - cancelledCount;
+              if (failed > 0) {
+                notify(entries.length === 1 ? t('summaryFailedOne') : t('summaryFailed', { done: uploaded, failed }), false);
+              } else if (cancelledCount > 0) {
+                notify(entries.length === 1 ? t('summaryCancelledOne') : t('summaryCancelled', { done: uploaded, cancelled: cancelledCount }), false);
+              } else if (mkdirFailed > 0) {
+                notify(t('errorMkdir'), false);
+              } else if (entries.length === 0) {
+                notify(t('foldersCreated', { count: createDirs.length }), true);
+              } else if (renamed > 0) {
+                notify(entries.length === 1 ? t('toastRenamedOne') : t('toastRenamed', { count: entries.length }), true);
+              } else {
+                notify(entries.length === 1 ? t('summaryDoneOne') : t('summaryDone', { count: entries.length }), true);
+              }
             }
           }
         }
@@ -937,7 +950,6 @@ window.__ModuleLoader__.load({
         aliveRef.current = true;
         return () => {
           aliveRef.current = false;
-          clearTimeout(autoCloseRef.current);
         };
       }, []);
 
@@ -1150,7 +1162,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'locale'],
+      inject: ['contextMenus', 'slots', 'locale'],
 
       // Pure helpers exposed for this plugin's own tests; not a client contract.
       __internals: { formatBytes, collectDropped, emptyDirectories, normalizeRelative, panelPosition, samePosition, splitUploadPath, statusText, errorText },

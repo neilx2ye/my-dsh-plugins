@@ -1,6 +1,6 @@
 {
   "name": "@local/workspace-upload",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Upload files from the browser into a Session's workspace from the Files page header.",

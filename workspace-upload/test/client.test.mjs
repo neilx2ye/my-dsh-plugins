@@ -90,7 +90,7 @@ async function loadClient() {
 
 test('registers the Files page entry through the slot system', async () => {
   const { module, registrations } = await loadClient();
-  assert.deepEqual([...module.inject], ['slots', 'locale']);
+  assert.deepEqual([...module.inject], ['contextMenus', 'slots', 'locale']);
   const inject = registrations.find((entry) => entry.kind === 'inject');
   assert.equal(inject.key, 'sidebar.right.tab.files.actions');
   const registration = registrations.find((entry) => entry.kind === 'register');

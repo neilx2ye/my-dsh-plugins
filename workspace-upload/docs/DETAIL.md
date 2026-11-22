@@ -23,7 +23,9 @@ The progress panel lists every chosen file with its size, a progress bar while i
 - **Replaced the existing file** — `onConflict: overwrite` is set and an earlier file of that name was replaced.
 - **A failure line** — the reason, such as the size limit, a rejected request, or a Session without a readable directory. Hovering the line shows the Host's technical message when there is one.
 
-Uploads run one file at a time. **Cancel uploads** stops the current file and skips the rest of the queue. The panel's close button and **Hide** only hide it: uploads keep running, and the badge keeps counting. A clean batch (every file published under its chosen name) hides its panel after a few seconds; a renamed, replaced, cancelled, or failed file keeps the panel until it is dismissed. Closing the Files tab does not stop a running upload, but its progress panel goes away; the page asks for confirmation before unloading while a transfer is in flight.
+Uploads run one file at a time. **Cancel uploads** stops the current file and skips the rest of the queue. The panel's close button and **Hide** only hide it: uploads keep running, and the badge keeps counting.
+
+The panel is a live progress view, not a history. As soon as the batch ends, its rows are cleared, the panel closes, and a short toast reports the outcome — uploaded, some renamed or replaced, failed, cancelled, or created empty folders. Reopening the panel shows only the two start actions. Nothing is retained in the page, nothing is written to a log file, and the Host's hidden `.dsh-upload-*.part` staging file is removed on failure or replaced by the published file. Closing the Files tab does not stop a running upload, but its progress panel goes away; the page asks for confirmation before unloading while a transfer is in flight.
 
 ## Destination and limits
 
