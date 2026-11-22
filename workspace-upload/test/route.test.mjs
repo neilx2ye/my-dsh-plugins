@@ -49,11 +49,17 @@ async function mount(root, config = {}, options = {}) {
     },
   };
   apply(ctx, config);
-  assert.equal(routes.length, 1, 'the bundle registers exactly one route');
+  const upload = routes.find((route) => route.path === ROUTE);
+  const limits = routes.find((route) => route.path === '/api/workspace-upload/limits');
+  const directory = routes.find((route) => route.path === '/api/workspace-upload/dir');
+  assert.equal(routes.length, 3, 'the bundle registers the upload, limits, and directory routes');
+  assert.ok(upload !== undefined, 'the upload route is registered');
+  assert.ok(limits !== undefined, 'the limits route is registered');
+  assert.ok(directory !== undefined, 'the directory route is registered');
   const dispose = async () => {
     for (const disposer of disposers) await disposer();
   };
-  return { fetch: routes[0].fetch, dispose };
+  return { fetch: upload.fetch, limits: limits.fetch, directory: directory.fetch, dispose };
 }
 
 /**
@@ -203,10 +209,21 @@ test('falls back to the live session store when session query is unavailable', a
 });
 
 test('normalizes settings', () => {
-  assert.deepEqual(readSettings(undefined), { maxUploadBytes: 2 * 1024 * 1024 * 1024, onConflict: 'rename' });
+  assert.deepEqual(readSettings(undefined), { maxUploadBytes: 500 * 1024 * 1024, onConflict: 'rename' });
   assert.deepEqual(readSettings({ maxUploadBytes: 10, onConflict: 'overwrite' }), { maxUploadBytes: 10, onConflict: 'overwrite' });
-  assert.equal(readSettings({ maxUploadBytes: -1 }).maxUploadBytes, 2 * 1024 * 1024 * 1024);
+  assert.equal(readSettings({ maxUploadBytes: -1 }).maxUploadBytes, 500 * 1024 * 1024);
   assert.equal(readSettings({ onConflict: 'sideways' }).onConflict, 'rename');
+});
+
+test('reports the accepted file size to the browser', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { limits, dispose } = await mount(root, { maxUploadBytes: 12345 });
+  t.after(dispose);
+
+  const response = await limits(new Request('http://localhost/api/workspace-upload/limits'));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { maxUploadBytes: 12345 });
 });
 test('accepts an empty file and publishes a zero-byte entry', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
@@ -231,4 +248,33 @@ test('does not publish a temporary file when the body is rejected mid-stream', a
   const response = await fetch(request('sessionId=session-1&name=partial.txt', 'a'.repeat(64)));
   assert.equal(response.status, 413);
   assert.deepEqual((await readdir(root)).sort(), ['keep.txt']);
+});
+
+test('creates a workspace-relative directory and keeps it idempotent', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { directory, dispose } = await mount(root);
+  t.after(dispose);
+
+  const create = (dir) => directory(new Request(
+    `http://localhost/api/workspace-upload/dir?sessionId=session-1&dir=${encodeURIComponent(dir)}`,
+    { method: 'POST' },
+  ));
+
+  const first = await create('proj/src');
+  assert.equal(first.status, 200);
+  const body = await first.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.value.path, join(await (await import('node:fs/promises')).realpath(root), 'proj', 'src'));
+
+  assert.equal((await create('proj/src')).status, 200, 'creating an existing directory is harmless');
+  assert.equal((await create('')).status, 400);
+  assert.equal((await create('../outside')).status, 400);
+  assert.equal((await create('/etc')).status, 400);
+
+  const unknown = await directory(new Request(
+    'http://localhost/api/workspace-upload/dir?sessionId=other&dir=proj',
+    { method: 'POST' },
+  ));
+  assert.equal(unknown.status, 404);
 });

@@ -85,7 +85,7 @@ async function loadClient() {
     },
   };
   plugin.apply(ctx);
-  return { module: plugin, effects, registrations, styleTags };
+  return { module: plugin, internals: plugin.__internals, effects, registrations, styleTags };
 }
 
 test('registers the Files page entry through the slot system', async () => {
@@ -119,4 +119,138 @@ test('installs one removable stylesheet', async () => {
   assert.match(styleTags[0].textContent, /\.wu-button/);
   style.dispose();
   assert.equal(styleTags.length, 0, 'disposing the plugin removes its stylesheet');
+});
+/** Translator stand-in that keeps the key and its parameters visible in assertions. */
+const t = (key, params) => (params === undefined ? key : `${key}:${JSON.stringify(params)}`);
+
+test('renders the upload outcome copy for every terminal state', async () => {
+  const { internals } = await loadClient();
+  const base = { name: 'notes.txt', savedAs: 'notes.txt', replaced: false, progress: 1, detail: '' };
+  assert.equal(internals.statusText({ ...base, state: 'queued' }, t), 'statusQueued');
+  assert.equal(internals.statusText({ ...base, state: 'uploading', progress: 0.5 }, t), 'statusUploading:{"percent":50}');
+  assert.equal(internals.statusText({ ...base, state: 'saving' }, t), 'statusSaving');
+  assert.equal(internals.statusText({ ...base, state: 'done' }, t), 'statusDone');
+  assert.equal(internals.statusText({ ...base, state: 'done', savedAs: 'notes (1).txt' }, t), 'statusRenamed:{"name":"notes (1).txt"}');
+  assert.equal(internals.statusText({ ...base, state: 'done', replaced: true }, t), 'statusReplaced');
+  assert.equal(internals.statusText({ ...base, name: '.env', savedAs: '.env', state: 'done' }, t), 'statusHidden');
+  assert.equal(internals.statusText({ ...base, state: 'cancelled' }, t), 'statusCancelled');
+  assert.equal(internals.statusText({ ...base, state: 'error', code: 'too-large' }, t), 'errorTooLarge');
+});
+
+test('maps every Host failure code to localized copy and keeps detail out of it', async () => {
+  const { internals } = await loadClient();
+  const cases = {
+    network: 'errorNetwork',
+    'too-large': 'errorTooLarge',
+    'unsupported-media-type': 'errorRejected',
+    rejected: 'errorRejected',
+    unauthorized: 'errorUnauthorized',
+    'session-unavailable': 'errorNoSession',
+    'invalid-session': 'errorNoSession',
+    'workspace-unavailable': 'errorNoSession',
+    'working-directory-unavailable': 'errorNoSession',
+    'working-directory-failed': 'errorNoSession',
+    'path-outside-workspace': 'errorOutside',
+    'directory-failed': 'errorDirectory',
+    'invalid-directory': 'errorDirectory',
+    'name-conflict': 'errorName',
+    'name-unavailable': 'errorName',
+    'directory-target': 'errorName',
+    'symlink-target': 'errorName',
+    'invalid-name': 'errorName',
+    'request-aborted': 'statusCancelled',
+    cancelled: 'statusCancelled',
+    http: 'errorUpload',
+    'upload-failed': 'errorFailed',
+    'publish-failed': 'errorFailed',
+  };
+  for (const [code, expected] of Object.entries(cases)) {
+    assert.equal(internals.errorText({ state: 'error', code, detail: 'EACCES: /secret/path' }, t), expected, code);
+  }
+});
+
+test('normalizes relative paths and splits them for the route', async () => {
+  const { internals } = await loadClient();
+  assert.equal(internals.normalizeRelative('a\\b/../c/./d'), 'a/c/d');
+  assert.equal(internals.normalizeRelative('/folder/sub/'), 'folder/sub');
+  assert.equal(internals.normalizeRelative(undefined), '');
+  assert.deepEqual({ ...internals.splitUploadPath('folder/sub/a.txt') }, { dir: 'folder/sub', name: 'a.txt' });
+  assert.deepEqual({ ...internals.splitUploadPath('a.txt') }, { dir: '', name: 'a.txt' });
+});
+
+test('creates only the directories no uploaded file implies', async () => {
+  const { internals } = await loadClient();
+  const entries = [{ label: 'folder/a.txt' }, { label: 'folder/sub/b.txt' }];
+  assert.deepEqual(
+    [...internals.emptyDirectories(entries, ['folder', 'folder/empty', 'folder/sub', 'folder/sub/deeper'])],
+    ['folder/empty', 'folder/sub/deeper'],
+  );
+  assert.deepEqual([...internals.emptyDirectories([], ['empty/sub'])], ['empty/sub']);
+  assert.deepEqual([...internals.emptyDirectories([{ label: 'a.txt' }], [])], []);
+});
+
+test('collects a dropped folder recursively and keeps its paths', async () => {
+  const { internals } = await loadClient();
+  const file = (name, size) => ({
+    name,
+    isFile: true,
+    isDirectory: false,
+    file: (resolve) => { queueMicrotask(() => resolve({ name, size })); },
+  });
+  const directory = (name, children) => ({
+    name,
+    isFile: false,
+    isDirectory: true,
+    createReader: () => {
+      let served = false;
+      return {
+        readEntries: (callback) => {
+          const batch = served ? [] : children;
+          served = true;
+          queueMicrotask(() => callback(batch));
+        },
+      };
+    },
+  });
+  const tree = directory('proj', [
+    file('a.txt', 3),
+    directory('src', [file('main.js', 4)]),
+    directory('empty', []),
+  ]);
+  const collected = await internals.collectDropped({
+    items: [{ kind: 'file', webkitGetAsEntry: () => tree }],
+  });
+  assert.deepEqual([...collected.entries.map((entry) => entry.relative).sort()], ['proj/a.txt', 'proj/src/main.js']);
+  assert.deepEqual([...collected.directories].sort(), ['proj', 'proj/empty', 'proj/src']);
+
+  const plain = await internals.collectDropped({ files: [{ name: 'x.txt', size: 1 }] });
+  assert.equal(plain.entries.length, 1);
+  assert.equal(plain.entries[0].relative, 'x.txt');
+});
+
+test('places the panel below or above the control and ignores hidden geometry', async () => {
+  const { internals } = await loadClient();
+  const below = internals.panelPosition({
+    getBoundingClientRect: () => ({ top: 100, bottom: 128, left: 1000, right: 1028, width: 28, height: 28 }),
+  });
+  assert.equal(below.top, 134);
+  assert.equal(below.width, 360);
+  assert.equal(below.maxHeight, 360);
+  assert.equal(below.left, 668);
+
+  assert.equal(internals.panelPosition({
+    getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
+  }), null);
+
+  assert.equal(internals.samePosition({ top: 1, left: 2, width: 3, maxHeight: 4 }, { top: 1, left: 2, width: 3, maxHeight: 4 }), true);
+  assert.equal(internals.samePosition({ top: 1, left: 2, width: 3, maxHeight: 4 }, { top: 1, left: 2, width: 3, maxHeight: 5 }), false);
+  assert.equal(internals.samePosition(null, null), true);
+});
+
+test('formats byte sizes for the panel', async () => {
+  const { internals } = await loadClient();
+  assert.equal(internals.formatBytes(0), '0 B');
+  assert.equal(internals.formatBytes(999), '999 B');
+  assert.equal(internals.formatBytes(500 * 1024 * 1024), '500 MB');
+  assert.equal(internals.formatBytes(1536), '1.50 KB');
 });

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feishu long connection",
+    "description": "Connect a Feishu bot to the Harness over a WebSocket long connection: one durable Session per chat and streamed replies, with no public callback URL."
+  }
+}

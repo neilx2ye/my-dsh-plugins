@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "飞书长连接",
+    "description": "用 WebSocket 长连接把飞书机器人接到 Harness：每个会话对应一个持久 Session，回复支持流式卡片，不需要公网回调地址。"
+  }
+}

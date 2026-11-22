@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "工作区下载",
+    "description": "在文件侧栏下载预览中的文件、把文件夹或整个工作区打包成 ZIP，由运行设备流式传输。",
+    "detail": "docs/DETAIL.md"
+  }
+}

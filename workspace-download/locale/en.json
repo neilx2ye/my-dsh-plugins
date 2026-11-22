@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Workspace downloads",
+    "description": "Download a previewed file, a folder as ZIP, or the whole workspace from the Files side panel; the Host streams the bytes.",
+    "detail": "docs/DETAIL.md"
+  }
+}

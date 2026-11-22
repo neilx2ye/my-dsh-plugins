@@ -2,5 +2,5 @@
     - id: workspace-upload
       name: '@local/workspace-upload'
       config:
-        maxUploadBytes: 2147483648
+        maxUploadBytes: 524288000
         onConflict: rename

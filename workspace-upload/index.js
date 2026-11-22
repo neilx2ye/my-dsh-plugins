@@ -5,8 +5,8 @@
  * local computer and writes them into the Session's workspace directory — the
  * same directory the Files page and its tree show. The route never buffers a
  * whole file: chunks flow from the request body into a hidden temporary file in
- * the destination directory, and publication renames that file into place, so
- * the tree never lists a partially written upload.
+ * the destination directory, and publication links or renames that file into
+ * place, so the tree never lists a partially written upload.
  *
  * Identity is the Session, never a free-form target path: the Host asks the
  * working-directory service for that Session's effective directory (live or
@@ -26,8 +26,18 @@ export const inject = ['connection'];
 /** Exact Fetch route receiving one browser file for a Session's workspace. */
 const UPLOAD_PATH = '/api/workspace-upload/file';
 
-/** Default largest accepted body, in bytes (2 GiB). */
-const DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+/** Exact Fetch route creating one workspace-relative directory. */
+export const DIRECTORY_PATH = '/api/workspace-upload/dir';
+
+/** Exact Fetch route reporting the accepted file size to the browser. */
+const LIMITS_PATH = '/api/workspace-upload/limits';
+
+/**
+ * Default largest accepted body, in bytes (500 MiB). It stays below a typical
+ * reverse proxy's 512 MiB request cap, where an oversized body would be refused
+ * before it reaches this route.
+ */
+const DEFAULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
 /** Hidden prefix of a temporary file inside the destination directory. */
 const TEMP_PREFIX = '.dsh-upload-';
@@ -66,6 +76,20 @@ export function apply(ctx, config) {
   ctx.effect(
     () =>
       ctx.connection.fetch.register({
+        path: LIMITS_PATH,
+        methods: ['GET'],
+        requestBody: 'buffered',
+        fetch: () => Response.json(
+          { maxUploadBytes: settings.maxUploadBytes },
+          { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } },
+        ),
+      }),
+    'workspace-upload: limits route',
+  );
+
+  ctx.effect(
+    () =>
+      ctx.connection.fetch.register({
         path: UPLOAD_PATH,
         methods: ['POST'],
         requestBody: 'streaming',
@@ -73,6 +97,46 @@ export function apply(ctx, config) {
       }),
     'workspace-upload: upload route',
   );
+
+  ctx.effect(
+    () =>
+      ctx.connection.fetch.register({
+        path: DIRECTORY_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: (request) => directoryRoute(ctx, request),
+      }),
+    'workspace-upload: directory route',
+  );
+}
+
+/**
+ * Create one workspace-relative directory, keeping an uploaded folder's shape.
+ * @param {object} ctx - Host root Context.
+ * @param {Request} request - admitted owner Fetch request.
+ * @returns {Promise<Response>} the created directory or a structured failure.
+ */
+async function directoryRoute(ctx, request) {
+  const params = new URL(request.url).searchParams;
+  const sessionId = (params.get('sessionId') ?? '').trim();
+  if (sessionId === '') return failure(400, 'invalid-session', 'sessionId is required');
+  const directory = params.get('dir') ?? '';
+  if (directory === '') return failure(400, 'invalid-directory', 'dir is required');
+  if (directory.includes('\u0000')) return failure(400, 'invalid-directory', 'the directory name contains a NUL byte');
+
+  const root = await workspaceRootOf(ctx, sessionId);
+  if (!root.ok) return failure(root.status, root.code, root.message);
+
+  try {
+    const path = await prepareDirectory(root.path, directory);
+    return Response.json(
+      { ok: true, value: { path } },
+      { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } },
+    );
+  } catch (error) {
+    if (error instanceof UploadError) return failure(error.status, error.code, error.message);
+    return failure(500, 'directory-failed', error instanceof Error ? error.message : String(error));
+  }
 }
 
 /**
@@ -102,32 +166,32 @@ export function readSettings(config) {
 async function uploadRoute(ctx, settings, request) {
   const essence = String(request.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
   if (essence !== 'application/octet-stream') {
-    return failure(415, 'unsupported-media-type', 'content-type must be application/octet-stream');
+    return refuse(request, 415, 'unsupported-media-type', 'content-type must be application/octet-stream');
   }
 
   const params = new URL(request.url).searchParams;
   const sessionId = (params.get('sessionId') ?? '').trim();
-  if (sessionId === '') return failure(400, 'invalid-session', 'sessionId is required');
+  if (sessionId === '') return refuse(request, 400, 'invalid-session', 'sessionId is required');
 
   let name;
   try {
     name = safeName(params.get('name') ?? '');
   } catch (error) {
-    return failure(400, 'invalid-name', error instanceof Error ? error.message : String(error));
+    return refuse(request, 400, 'invalid-name', error instanceof Error ? error.message : String(error));
   }
 
   const directory = params.get('dir') ?? '';
-  if (directory.includes('\u0000')) return failure(400, 'invalid-directory', 'the directory name contains a NUL byte');
+  if (directory.includes('\u0000')) return refuse(request, 400, 'invalid-directory', 'the directory name contains a NUL byte');
 
   const root = await workspaceRootOf(ctx, sessionId);
-  if (!root.ok) return failure(root.status, root.code, root.message);
+  if (!root.ok) return refuse(request, root.status, root.code, root.message);
 
   let destination;
   try {
     destination = await prepareDirectory(root.path, directory);
   } catch (error) {
-    if (error instanceof UploadError) return failure(error.status, error.code, error.message);
-    return failure(500, 'directory-failed', error instanceof Error ? error.message : String(error));
+    if (error instanceof UploadError) return refuse(request, error.status, error.code, error.message);
+    return refuse(request, 500, 'directory-failed', error instanceof Error ? error.message : String(error));
   }
 
   let written = 0;
@@ -394,6 +458,23 @@ function within(root, candidate) {
  */
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Refuse an upload whose body was never read, stopping the browser's stream too.
+ * @param {Request} request - request owning the body.
+ * @param {number} status - HTTP status.
+ * @param {string} code - stable failure code.
+ * @param {string} message - human-readable failure text.
+ * @returns {Promise<Response>} JSON failure.
+ */
+async function refuse(request, status, code, message) {
+  try {
+    await request.body?.cancel();
+  } catch {
+    // A body that is already closed or errored needs no further cancellation.
+  }
+  return failure(status, code, message);
 }
 
 /**

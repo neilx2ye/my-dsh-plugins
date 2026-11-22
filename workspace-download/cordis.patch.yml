@@ -1,0 +1,9 @@
+- insert:
+    - id: workspace-download
+      name: '@local/workspace-download'
+      config:
+        maxEntries: 20000
+        maxTotalBytes: 2147483648
+        exclude:
+          - .git
+          - node_modules

@@ -1,6 +1,6 @@
 {
   "name": "@local/user-switcher",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Choose the Linux account every shell command runs as, and open each account its own DSH instance, from the sidebar.",

@@ -305,8 +305,9 @@ window.__ModuleLoader__.load({
               body: JSON.stringify({ user }),
             });
             if (!result.ok || result.data?.ok !== true) throw new Error(result.data?.message ?? `HTTP ${result.status}`);
-            setState((current) => (current === null ? current : { ...current, selected: result.data.selected }));
-            setPending(null);
+            // Keep the row pending through the instance request: starting an
+            // account's Harness can take seconds, and until the browser lands
+            // on that instance this account is not in use yet.
             const instance = await requestJson(INSTANCE_URL, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -317,6 +318,7 @@ window.__ModuleLoader__.load({
               window.location.assign(target);
               return;
             }
+            setPending(null);
             if (!instance.ok) setError(instance.data?.message ?? `HTTP ${instance.status}`);
           } catch (failure) {
             setPending(null);
@@ -324,7 +326,11 @@ window.__ModuleLoader__.load({
           }
         }, [ctx]);
 
-        const isActive = (user) => (state.selected === null ? user.name === state.self?.user : user.name === state.selected);
+        // The account "in use" is the one this instance actually runs as.
+        // Selecting another account opens that account's own instance, so the
+        // persisted selection only records the last click and must not be
+        // reported as the live identity here.
+        const isActive = (user) => user.name === state.self?.user;
 
         const toggleVisible = React.useCallback(async (user) => {
           const nextVisible = user.visible === false;

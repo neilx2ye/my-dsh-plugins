@@ -1,0 +1,28 @@
+# The Feishu bridge bundle patch.
+#
+# One Host row owns the Feishu app credentials and the outbound WebSocket
+# ("long connection") event transport. The Settings page writes this row
+# through the profile config editor, so a saved credential pair restarts the
+# bridge and reconnects it.
+#
+# Empty credentials leave the row installed but idle: the Settings page still
+# opens, shows what is missing, and can test a draft before saving.
+
+- insert:
+    - id: feishu-bridge
+      name: '@local/feishu-bridge'
+      config:
+        enabled: true
+        appId: ''
+        appSecret: ''
+        domain: feishu
+        cwd: ''
+        agentPreset: ''
+        dmMode: open
+        dmAllowlist: []
+        groupAllowlist: []
+        requireMention: true
+        respondToMentionAll: false
+        streaming: true
+        markdown: true
+        replyInThread: false
