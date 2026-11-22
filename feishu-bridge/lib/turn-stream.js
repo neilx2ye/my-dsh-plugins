@@ -113,11 +113,10 @@ export class TurnStream {
  * @returns the promise's value.
  */
 function asyncTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
-      timer.unref?.();
-    }),
-  ]);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }

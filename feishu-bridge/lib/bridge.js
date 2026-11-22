@@ -22,6 +22,7 @@ import {
   inferImageMediaType,
   resourceNote,
   shortTitle,
+  textOfAssistantEvent,
   stripBotMention,
   turnFailureText,
 } from './format.js';
@@ -65,13 +66,12 @@ export function messageOf(error) {
  * @returns the promise's value.
  */
 function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      timer.unref?.();
-    }),
-  ]);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -462,12 +462,12 @@ export class FeishuBridge {
     if (promptText !== '') parts.push({ type: 'text', text: promptText });
     parts.push(...images);
     if (parts.length === 0) {
-      const note = resourceNote(unsupported);
+      const labels = [...new Set(unsupported.map((resource) => ({ file: '文件', audio: '语音', video: '视频', sticker: '表情' })[resource?.type] ?? '消息'))];
       await this.send(
         message.chatId,
-        note === ''
+        labels.length === 0
           ? '这条消息没有可读取的文字或图片，请直接发送文字。'
-          : `目前还不能读取${note.replace(/^（|）$/g, '')}，请改发文字或图片。`,
+          : `目前还不能读取${labels.join('、')}，请改发文字或图片。`,
         message.messageId,
       ).catch((error) => {
         this.logger?.warn?.(`feishu-bridge: 提示发送失败: ${messageOf(error)}`);
@@ -735,7 +735,7 @@ export class FeishuBridge {
     if (event.type === 'assistant/message') {
       if (pending.turn !== undefined && event.data.turn !== pending.turn) return;
       if (event.surfaceOp === 'replace' || event.surfaceOp?.op === 'replace') return;
-      const text = assistantTextForTurn([event], event.data.turn);
+      const text = textOfAssistantEvent(event);
       if (text !== '') pending.messages.push(text);
       return;
     }
@@ -772,15 +772,15 @@ export class FeishuBridge {
   async finalize(pending, reason) {
     this.removePending(pending);
     const session = this.ctx.sessions.get(pending.sessionId);
-    let finalText = '';
-    if (session !== undefined && typeof session.snapshotEvents === 'function') {
+    let finalText = pending.messages.join('\n\n').trim();
+    if (finalText === '' && session !== undefined && typeof session.snapshotEvents === 'function') {
       try {
-        finalText = assistantTextForTurn(session.snapshotEvents(pending.startSeq), pending.turn);
+        const from = typeof session.seq === 'number' ? Math.max(0, session.seq - 2_000) : pending.startSeq;
+        finalText = assistantTextForTurn(session.snapshotEvents(from), pending.turn);
       } catch {
         finalText = '';
       }
     }
-    if (finalText === '') finalText = pending.messages.join('\n\n').trim();
     const failure = turnFailureText(reason);
     const text = finalText !== '' ? finalText : failure !== '' ? failure : '已完成。';
 

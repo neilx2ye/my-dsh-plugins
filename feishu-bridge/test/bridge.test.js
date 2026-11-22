@@ -61,10 +61,14 @@ async function harness(overrides = {}) {
       return Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
     },
     async stream(chatId, input, options) {
-      calls.stream = { chatId, options };
+      calls.stream = { chatId, options, appended: '', content: '' };
       const controller = {
-        append: async () => undefined,
-        setContent: async () => undefined,
+        append: async (text) => {
+          calls.stream.appended += text;
+        },
+        setContent: async (text) => {
+          calls.stream.content = text;
+        },
       };
       await input.markdown(controller);
       return { messageId: 'om_stream' };
@@ -108,6 +112,7 @@ test('a direct message creates one Session and prompts it once', async () => {
     assert.equal(calls.prompt[0].mode, 'queue');
     assert.equal(calls.prompt[0].requestId, 'feishu:om_message_1');
   } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -125,6 +130,7 @@ test('a duplicate redelivery is ignored and an existing binding is reused', asyn
     assert.equal(calls.prompt.length, 2);
     assert.equal(calls.prompt[1].sessionId, 'session-1');
   } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -135,6 +141,7 @@ test('a group message is labelled with its sender', async () => {
     await bridge.handleMessage(message({ chatId: 'oc_group', chatType: 'group', content: '@DSH 看下这个' }));
     assert.equal(calls.prompt[0].content[0].text, '[张三] @DSH 看下这个');
   } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -153,6 +160,7 @@ test('an image resource becomes an image prompt part', async () => {
     assert.equal(calls.prompt[0].content[1].type, 'image');
     assert.equal(calls.prompt[0].content[1].mediaType, 'image/png');
   } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -173,6 +181,7 @@ test('a turn end sends the recorded assistant text back to the chat', async () =
     assert.deepEqual(calls.send[0].input, { markdown: '来自智能体的回答' });
     assert.equal(calls.send[0].options.replyTo, 'om_message_1');
   } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -191,6 +200,7 @@ test('a failed turn reports the failure when the model produced no text', async 
     assert.equal(calls.send.length, 1);
     assert.match(calls.send[0].input.markdown, /处理失败：model down/);
   } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });
@@ -206,6 +216,36 @@ test('a message with no readable content is answered without prompting', async (
     assert.equal(calls.send.length, 1);
     assert.match(calls.send[0].input.markdown, /文件/);
   } finally {
+    await bridge.store.flush();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+test('streaming appends live deltas and finishes with the recorded answer', async () => {
+  const { bridge, calls, session, dataDir } = await harness({ streaming: true });
+  try {
+    await bridge.handleMessage(message());
+    bridge.onSessionEvent(session, { type: 'turn/start', data: { turn: 1 } });
+    bridge.onAssistantStream({
+      agent: { session: { id: 'session-1' } },
+      frame: { type: 'chunk', turn: 1, chunk: { type: 'text-delta', text: '来自' } },
+    });
+    bridge.onAssistantStream({
+      agent: { session: { id: 'session-1' } },
+      frame: { type: 'chunk', turn: 1, chunk: { type: 'text-delta', text: '智能体的回答' } },
+    });
+    bridge.onSessionEvent(session, {
+      type: 'assistant/message',
+      data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '来自智能体的回答' }] } },
+    });
+    bridge.onSessionEvent(session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(calls.send.length, 0, 'a successful card stream does not duplicate the answer as text');
+    assert.equal(calls.stream.chatId, 'oc_chat_1');
+    assert.equal(calls.stream.options.replyTo, 'om_message_1');
+    assert.equal(calls.stream.appended, '来自智能体的回答');
+    assert.equal(calls.stream.content, '来自智能体的回答');
+  } finally {
+    await bridge.store.flush();
     await rm(dataDir, { recursive: true, force: true });
   }
 });

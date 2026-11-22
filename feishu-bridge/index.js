@@ -11,6 +11,7 @@
  * inbound port, domain, or TLS certificate.
  */
 
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -24,6 +25,15 @@ import {
 import { FeishuBridge, messageOf, probeCredentials } from './lib/bridge.js';
 
 export { Config };
+
+/** Bundle version, read once from the package manifest. */
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
 
 /** Services the bridge needs from the Host. */
 export const inject = ['sessions', 'sessionController'];
@@ -138,6 +148,7 @@ export function apply(ctx, rawConfig) {
 function statePayload(ctx, settings, bridge) {
   const secret = resolveAppSecret(settings);
   return {
+    version: VERSION,
     config: {
       enabled: settings.enabled,
       appId: settings.appId,
@@ -231,7 +242,9 @@ async function testRoute(settings, logger, request) {
     const result = await probe(candidate.value, logger);
     return json({ ok: true, ...result });
   } catch (error) {
-    return failure(502, error?.code === 'dependency-missing' ? 'dependency-missing' : 'connect-failed', messageOf(error));
+    const detail = messageOf(error);
+    const hint = error?.code === 'dependency-missing' ? '' : '（请检查 App ID / Secret、租户域名，以及应用是否已创建版本并发布）';
+    return failure(502, error?.code === 'dependency-missing' ? 'dependency-missing' : 'connect-failed', `${detail}${hint}`);
   }
 }
 

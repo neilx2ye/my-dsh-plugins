@@ -1,6 +1,6 @@
 {
   "name": "@local/feishu-bridge",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Talk to the Harness from Feishu over a WebSocket long connection: one durable Session per chat, streamed replies, no public callback URL.",
