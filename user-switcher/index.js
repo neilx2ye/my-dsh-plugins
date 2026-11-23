@@ -126,7 +126,9 @@ export function apply(ctx, config) {
       const base = shell.execute[ORIGINAL] ?? shell.execute;
       const wrapped = function switched(spec) {
         const target = userForWorkdir(spec.workdir, accounts);
-        if (target === undefined) return base.call(shell, spec);
+        // Same account: setpriv would still call initgroups, which a non-root
+        // process may not do. Running in place is exactly what was asked for.
+        if (target === undefined || target.uid === process.getuid?.()) return base.call(shell, spec);
         return base.call(shell, runAs(spec, target));
       };
       wrapped[PATCHED] = true;

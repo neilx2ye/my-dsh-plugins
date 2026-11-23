@@ -13,7 +13,9 @@ do I change it?" — without starting a second Harness and without changing any 
   state dot. Clicking a line selects the account every later Bash command runs under. The Host
   process keeps its uid; each execution is handed to `setpriv --reuid <uid> --regid <gid>
   --init-groups`, so the command's user, groups, `HOME` and file permissions change while sessions,
-  model, plugins, credentials, and settings stay exactly where they are.
+  model, plugins, credentials, and settings stay exactly where they are. A command whose working
+  directory belongs to the Host's own account runs in place, because `setpriv` still calls
+  `initgroups`, which a non-root Host cannot do.
 - **Isolation.** Selecting an account starts or reuses that account's *own* Harness instance: a
   separate process running as the account with `DSH_HOME=<account home>/.dsh`, served at
   `/<account>/`. Its workspaces, identities, sessions and credentials are private to that account,
