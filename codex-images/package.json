@@ -1,6 +1,6 @@
 {
   "name": "@local/codex-images",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Browse the current project's Codex-generated images, manage them with the agent, and sign in to an isolated Codex account.",

@@ -21,9 +21,11 @@ its own isolated Codex home, so OAuth sign-in and account state never touch `~/.
 - **Account**: the panel talks to a `codex app-server` running in the isolated home and
   shows the signed-in identity (email, plan, workspace, account id, token expiry). The
   terminal's `~/.codex` configuration and login are never read or modified.
-  - The signed-in card shows the plan, plan expiry, remaining quota per window, each
-    window's reset time, extra credits, and available full resets. Account IDs and token
-    expiry are intentionally hidden.
+  - The signed-in card shows the plan, plan expiry, quota per window, each window's reset
+    time, extra credits, and available full resets. Every window draws one usage bar that
+    fills with the used share (green, amber from 80%, red once exhausted) and states the
+    remaining percentage; the row under it repeats the used percentage next to the reset
+    time. Account IDs and token expiry are intentionally hidden.
   - **Device code (default)**: the panel shows a one-time code and a verification URL;
     authorize on any device that can reach OpenAI and the panel updates through the
     `account/login/completed` notification.

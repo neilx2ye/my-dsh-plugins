@@ -163,7 +163,10 @@ window.__ModuleLoader__.load({
 .cxi-quota{display:flex;flex-direction:column;gap:5px}
 .cxi-quota-head{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 .cxi-quota-bar{height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
-.cxi-quota-fill{height:100%;border-radius:3px;background:var(--dsw-alias-state-success-primary)}
+.cxi-quota-fill{height:100%;border-radius:3px;background:var(--dsw-alias-state-success-primary);transition:width .18s ease}
+.cxi-quota-fill.is-warning{background:var(--dsw-alias-state-warn-primary)}
+.cxi-quota-fill.is-danger{background:var(--dsw-alias-state-error-primary)}
+.cxi-quota-state-danger{color:var(--dsw-alias-state-error-primary)}
 .cxi-quota-meta{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--dsw-alias-label-tertiary)}
 .cxi-quota-note{font-size:11px;line-height:1.5;color:var(--dsw-alias-label-secondary)}
 .cxi-callback{display:flex;flex-direction:column;gap:6px;margin-top:2px}
@@ -1771,8 +1774,11 @@ window.__ModuleLoader__.load({
       }
       const quotaWindows = [];
       if (rateLimits !== null) {
-        if (rateLimits.primary !== null && typeof rateLimits.primary === 'object') quotaWindows.push({ key: 'primary', ...rateLimits.primary });
-        if (rateLimits.secondary !== null && typeof rateLimits.secondary === 'object') quotaWindows.push({ key: 'secondary', ...rateLimits.secondary });
+        const addWindow = (key, window) => {
+          if (window !== null && typeof window === 'object' && Number.isFinite(window.usedPercent)) quotaWindows.push({ key, ...window });
+        };
+        addWindow('primary', rateLimits.primary);
+        addWindow('secondary', rateLimits.secondary);
       }
       const quotaLabel = (minutes) => {
         if (minutes === 10080) return t('quotaWeekly');
@@ -1840,17 +1846,28 @@ window.__ModuleLoader__.load({
                     h('div', { key: 'quota', className: 'cxi-quota-section' }, [
                       h('div', { key: 'title', className: 'cxi-quota-title' }, t('quotaTitle')),
                       ...quotaWindows.map((quota) => {
-                        const used = typeof quota.usedPercent === 'number' ? Math.max(0, Math.min(100, quota.usedPercent)) : 0;
+                        const used = Math.max(0, Math.min(100, quota.usedPercent));
                         const remaining = 100 - used;
+                        const exhausted = used >= 100;
+                        const tone = exhausted ? 'is-danger' : used >= 80 ? 'is-warning' : '';
+                        const fill = used <= 0 ? 0 : Math.max(2, used);
                         return h('div', { key: quota.key, className: 'cxi-quota' }, [
                           h('div', { key: 'head', className: 'cxi-quota-head' }, [
                             h('span', { key: 'label' }, quotaLabel(quota.windowDurationMins)),
-                            h('span', { key: 'percent' }, used >= 100 ? t('quotaExhausted') : t('quotaRemaining', { percent: String(remaining) })),
+                            h('span', { key: 'percent', className: exhausted ? 'cxi-quota-state-danger' : undefined }, exhausted ? t('quotaExhausted') : t('quotaRemaining', { percent: String(remaining) })),
                           ]),
-                          h('div', { key: 'bar', className: 'cxi-quota-bar' }, h('div', {
+                          h('div', {
+                            key: 'bar',
+                            className: 'cxi-quota-bar',
+                            role: 'progressbar',
+                            'aria-valuemin': 0,
+                            'aria-valuemax': 100,
+                            'aria-valuenow': used,
+                            'aria-label': `${quotaLabel(quota.windowDurationMins)} ${t('quotaUsed', { percent: String(used) })}`,
+                          }, h('div', {
                             key: 'fill',
-                            className: 'cxi-quota-fill',
-                            style: { width: `${Math.max(2, remaining)}%` },
+                            className: `cxi-quota-fill ${tone}`.trim(),
+                            style: { width: `${fill}%` },
                           })),
                           h('div', { key: 'meta', className: 'cxi-quota-meta' }, [
                             h('span', { key: 'used' }, t('quotaUsed', { percent: String(used) })),
