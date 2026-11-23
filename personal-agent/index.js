@@ -33,6 +33,13 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 import {
+  composeDirectMessagePrompt,
+  composePeerSection,
+  dmPairKey,
+  normalizeDirectMessage,
+  DM_TRANSCRIPT_LIMIT,
+} from './lib/direct-message.js';
+import {
   Config,
   composeIdentitySection,
   composeMemorySection,
@@ -89,6 +96,8 @@ const IDENTITY_SECTION_ORDER = -999;
 const MEMORY_SECTION_ORDER = 10150;
 /** Group protocol sits after the identity and before memory. */
 const GROUP_SECTION_ORDER = -998;
+/** Peer roster and direct-message guidance sit just after the group protocol. */
+const PEER_SECTION_ORDER = -997;
 /** Subagent backend used for guest replies. */
 const SUBAGENT_PROVIDER = 'spawn';
 
@@ -619,6 +628,50 @@ function buildAskIdentityTool(groupFor, ask) {
 }
 
 /**
+ * Build the model-facing `message_identity` tool: one private 1:1 direct
+ * message to another identity in the same profile, answered in this turn.
+ * @param recordFor - resolve the calling agent's identity record.
+ * @param send - deliver one message and return the target identity's reply.
+ * @returns a tool definition accepted by `ctx.tools.register`.
+ */
+function buildMessageIdentityTool(recordFor, send) {
+  return {
+    name: 'message_identity',
+    description:
+      'Send a private direct message to another personal agent in this profile and wait for their own reply. Use it when the user asks you to consult, ask, coordinate with, or hand something to one of the other identities; the reply comes back in this turn. This is a 1:1 conversation, not a group chat, and the exchange is saved for later direct messages with that identity. Never invent their reply and never answer on their behalf.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        identity: { type: 'string', description: 'Target identity id or exact name.' },
+        message: { type: 'string', description: 'What to say to that identity. Be specific about what you need from them.' },
+      },
+      required: ['identity', 'message'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          identityId: { type: 'string' },
+          name: { type: 'string' },
+          text: { type: 'string' },
+        },
+        required: ['identityId', 'name', 'text'],
+      },
+      render: (_args, value) => [{ type: 'text', text: `**${value.name}**\n${value.text}` }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const record = recordFor(exec);
+      const wanted = typeof args.identity === 'string' ? args.identity.trim() : '';
+      if (wanted === '') throw new Error('personal-agent: message_identity needs an identity id or name');
+      return send(record, wanted, args.message, exec);
+    },
+  };
+}
+
+/**
  * Register the identity model, tools, homes, and browser routes.
  * @param ctx - Host root Context.
  * @param rawConfig - Loader row configuration, validated by {@link Config}.
@@ -863,6 +916,172 @@ export function apply(ctx, rawConfig) {
 
   /** Sessions prompted for a multi-agent group, awaiting their turn end. */
   const pendingReplies = new Map();
+
+  // ── private direct messages between two identities ───────────────────────
+  // A direct message is one pair's own thread: the caller identity asks, the
+  // target identity answers as itself (a one-shot child running in its home),
+  // and the exchange is persisted so a later message carries the thread.
+
+  /** Root holding every pair's direct-message transcript. */
+  const dmsRoot = join(dataDir, 'dms');
+  /** Pair key -> tail of the serialized exchange chain. */
+  const dmExchanges = new Map();
+
+  /**
+   * Transcript file for one pair.
+   * @param key - pair key from dmPairKey.
+   * @returns absolute file path.
+   */
+  function dmTranscriptFile(key) {
+    return join(dmsRoot, key, 'transcript.json');
+  }
+
+  /**
+   * Read one pair's direct-message transcript.
+   * @param key - pair key.
+   * @returns stored messages, oldest first.
+   */
+  function readDm(key) {
+    try {
+      if (!existsSync(dmTranscriptFile(key))) return [];
+      const parsed = JSON.parse(readFileSync(dmTranscriptFile(key), 'utf8'));
+      return Array.isArray(parsed.messages) ? parsed.messages.filter((message) => message !== null && typeof message === 'object') : [];
+    } catch (error) {
+      logger?.warn?.(`personal-agent: could not read direct messages: ${messageOf(error)}`);
+      return [];
+    }
+  }
+
+  /**
+   * Replace one pair's transcript, keeping it bounded.
+   * @param key - pair key.
+   * @param messages - complete message list.
+   */
+  async function writeDm(key, messages) {
+    const file = dmTranscriptFile(key);
+    await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+    const bounded = messages.slice(-DM_TRANSCRIPT_LIMIT);
+    await writeFile(file, `${JSON.stringify({ version: 1, messages: bounded }, null, 2)}\n`, { mode: 0o600 });
+  }
+
+  /**
+   * Append one message to a pair's transcript. The caller holds the pair's
+   * exchange lock, so this does not need a write chain of its own.
+   * @param key - pair key.
+   * @param message - { id, role, identityId, name, text, time }.
+   */
+  async function appendDm(key, message) {
+    const messages = readDm(key);
+    messages.push(message);
+    await writeDm(key, messages);
+  }
+
+  /**
+   * Serialize whole exchanges for one pair, so two concurrent messages cannot
+   * read the same history and interleave their writes.
+   * @param key - pair key.
+   * @param operation - exchange to run.
+   * @returns the operation's result.
+   */
+  function withDmExchange(key, operation) {
+    const previous = dmExchanges.get(key) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+    dmExchanges.set(key, next);
+    const cleanup = () => {
+      if (dmExchanges.get(key) === next) dmExchanges.delete(key);
+    };
+    next.then(cleanup, cleanup);
+    return next;
+  }
+
+  /**
+   * Deliver one direct message to another identity and wait for its reply.
+   * The reply is a one-shot child in the target's home, so the target's own
+   * persona and memory apply; nothing in the pair's thread is shared with any
+   * other identity.
+   * @param caller - calling identity record.
+   * @param wanted - target identity id or exact name.
+   * @param rawMessage - model-supplied message text.
+   * @param exec - tool execution context.
+   * @returns the target identity and its reply.
+   */
+  async function sendDirectMessage(caller, wanted, rawMessage, exec) {
+    const target = records.find((record) => record.identity.id === wanted || record.identity.name === wanted);
+    if (target === undefined) {
+      const available = records.map((record) => `${record.identity.name} (${record.identity.id})`).join(', ');
+      throw new Error(`personal-agent: no identity "${wanted}". Available identities: ${available}`);
+    }
+    if (target.identity.id === caller.identity.id) {
+      throw new Error('personal-agent: an identity cannot send a direct message to itself');
+    }
+    const message = normalizeDirectMessage(rawMessage);
+    const key = dmPairKey(caller.identity.id, target.identity.id);
+    return withDmExchange(key, async () => {
+      const subagents = ctx.get('subagents');
+      const provider = subagents?.getProvider?.(SUBAGENT_PROVIDER);
+      if (subagents === undefined || provider === undefined) {
+        throw new Error('personal-agent: direct messages need a subagent provider, which this Host does not expose');
+      }
+      const history = readDm(key);
+      await appendDm(key, {
+        id: `dm-${randomUUID()}`,
+        role: 'agent',
+        identityId: caller.identity.id,
+        name: caller.identity.name,
+        text: message,
+        time: new Date().toISOString(),
+      });
+      const prompt = composeDirectMessagePrompt({
+        caller: caller.identity,
+        target: target.identity,
+        message,
+        history,
+      });
+      const timeout = AbortSignal.timeout(180_000);
+      const signal = exec.signal == null ? timeout : AbortSignal.any([exec.signal, timeout]);
+      const activation = await subagents.startActivation({
+        provider: provider.name,
+        label: `${caller.identity.name} \u2192 ${target.identity.name}`,
+        request: {
+          cwd: target.paths.home,
+          agentPreset: PRESET_ID,
+          prompt: [{ type: 'text', text: prompt }],
+          parent: exec.agent,
+          signal,
+        },
+        signal,
+        delivery: 'caller',
+      });
+      try {
+        const result = await activation.result;
+        const text = result.output
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n')
+          .trim();
+        if (text !== '') {
+          await appendDm(key, {
+            id: `dm-${randomUUID()}`,
+            role: 'assistant',
+            identityId: target.identity.id,
+            name: target.identity.name,
+            text,
+            time: new Date().toISOString(),
+          });
+        }
+        return {
+          identityId: target.identity.id,
+          name: target.identity.name,
+          text:
+            text !== ''
+              ? text
+              : `${target.identity.name} did not produce a reply (${result.stopReason}${result.diagnostic === undefined ? '' : `: ${result.diagnostic}`}).`,
+        };
+      } finally {
+        await activation.dispose().catch((error) => logger?.warn?.(`personal-agent: direct-message cleanup failed: ${messageOf(error)}`));
+      }
+    });
+  }
 
   /**
    * Extract the visible text of an assistant event.
@@ -1176,6 +1395,16 @@ export function apply(ctx, rawConfig) {
               });
             }
           }
+          // A private identity conversation can reach the other identities
+          // directly. A group has its own participant roster instead, and a
+          // one-shot direct-message child answers only the message it got.
+          if (group === undefined && records.length > 1 && agent.session.origin !== 'subagent') {
+            scoped.systemPrompt.section({
+              name: 'personal-agent:peers',
+              order: PEER_SECTION_ORDER,
+              text: () => composePeerSection(record.identity, records.map((sibling) => sibling.identity)),
+            });
+          }
         });
         installs.set(agent, fiber);
       } catch (error) {
@@ -1356,6 +1585,15 @@ export function apply(ctx, rawConfig) {
     scope.tools.register(buildNewConversationTool(recordForExec, scheduleConversation), {
       when: ({ agent }) =>
         whenIdentity({ agent }) && agent.session.origin !== 'subagent' && groupForAgent(agent, ctx) === undefined,
+    });
+    // A direct message needs a private identity conversation. A group already
+    // has its own channel, and a relative child answering a direct message must
+    // not start another one, so neither may use the tool.
+    scope.tools.register(buildMessageIdentityTool(recordForExec, sendDirectMessage), {
+      when: ({ agent }) =>
+        whenIdentity({ agent }) &&
+        groupForAgent(agent, ctx) === undefined &&
+        agent.session.origin !== 'subagent',
     });
     scope.tools.register(
       buildAskIdentityTool((sessionId, agent) => groups.get(sessionId) ?? groupForAgent(agent, ctx), askGroupGuest),
@@ -1840,7 +2078,7 @@ export function apply(ctx, rawConfig) {
           includeInPrompt: settings.memory.includeInPrompt,
           maxBytes: settings.memory.maxBytes,
         },
-        tools: ['remember', 'recall', 'new_conversation', 'ask_identity'],
+        tools: ['remember', 'recall', 'new_conversation', 'ask_identity', 'message_identity'],
         editable: ctx.get('configEditor') !== undefined && ctx.fiber?.entry !== undefined,
       };
     }

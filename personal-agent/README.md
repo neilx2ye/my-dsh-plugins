@@ -27,7 +27,7 @@ other profile on the device — and every device-wide setting — is untouched.
 | Default agent preset | `standard` | Unchanged; identity conversations request `personal` explicitly |
 | Memory | Per conversation | One note file per identity, shared by that identity's conversations |
 | Workspace | A list of projects you choose from | Unchanged for projects; each identity adds one extra workspace group for its home |
-| Tools | — | `remember` and `recall`, only visible inside identity homes |
+| Tools | — | `remember`, `recall`, and `message_identity`, only visible inside identity homes |
 
 The Harness data model still binds sessions to a directory, so each identity has
 one workspace underneath. It is presentation, not deletion: the Workspace
@@ -291,11 +291,12 @@ workspace conversations; it cannot re-enable Personal there.
 | `remember` | Append one durable fact to the calling identity's memory |
 | `recall` | Search or read the calling identity's memory |
 | `new_conversation` | Start a blank context after this turn; the previous transcript is shown display-only |
+| `message_identity` | Send a private 1:1 direct message to another identity and return its reply |
 | `ask_identity` | Legacy groups only: let the host ask one guest identity for a reply |
 
-All four are registered at the profile's Host scope and resolve the identity
-from the calling agent's working directory (nearest identity home wins). They
-are visible only in identity conversations, not in project sessions.
+They are registered at the profile's Host scope and resolve the identity from
+the calling agent's working directory (nearest identity home wins). They are
+visible only in identity conversations, not in project sessions.
 
 ### Starting a fresh conversation
 
@@ -367,6 +368,30 @@ group shows its group name and a rename action. The active conversation header
 uses the same rule: the session title and preset controls are hidden, and the
 identity's avatar/name or the group name is shown instead. Project heroes and
 headers are unchanged.
+
+### Direct messages between identities
+
+Every private identity conversation knows the other identities in the profile:
+its prompt lists their names, ids, and roles, and explains how to reach them.
+The `message_identity` tool starts one **private 1:1 message** — pass the other
+identity's id or exact name and what you need:
+
+- The target answers as itself. The Host runs a one-shot child in that
+  identity's home, so its persona, memory, and tools apply, and returns the
+  reply to the caller in the same turn. The caller can then tell the user what
+  the other identity said. No group is created and no third identity sees the
+  exchange.
+- The pair's thread is saved under
+  `<profile>/personal-agent/dms/<a>--<b>/transcript.json`, and the recent
+  exchange is carried into the next direct message, so two identities can keep
+  a conversation across calls. The file is bounded to the last 400 messages.
+- The tool is not available in project sessions, inside a group (which already
+  has its own channel), or inside the one-shot child that is answering a
+  direct message. A direct message therefore cannot start an endless chain of
+  agents messaging each other.
+- One message is capped at 8,000 characters and one exchange at 180 seconds.
+  There is no separate direct-message page yet: the human sees the relay in the
+  caller's conversation, and the target's own conversation is untouched.
 
 ### Unread badges
 
