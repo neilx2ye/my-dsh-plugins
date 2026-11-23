@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Artifacts & Canvas",
-    "description": "The assistant writes HTML pages, SVG drawings, charts, Mermaid diagrams, Markdown documents, and code samples into a canvas panel that renders, edits, versions, and exports them."
+    "description": "The assistant writes HTML pages, SVG drawings, charts, Mermaid diagrams, Markdown documents, and code samples into a card you can expand right in the chat, or into a canvas panel that renders, edits, versions, and exports them."
   }
 }

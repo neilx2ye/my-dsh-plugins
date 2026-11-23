@@ -94,6 +94,14 @@ window.__ModuleLoader__.load({
       'card.updating': 'Updating artifact…',
       'card.failed': 'Artifact failed',
       'card.version': 'v{version}',
+      'card.expand': 'Expand preview',
+      'card.fullscreen': 'Fullscreen',
+      'card.collapse': 'Collapse preview',
+      'canvas.back': 'Back',
+      'canvas.forward': 'Forward',
+      'canvas.recent': 'Recent canvases',
+      'canvas.versions': 'Version history',
+      'canvas.latest': 'latest',
       'error.load': 'Could not load: {message}',
       'error.save': 'Could not save: {message}',
       'error.copy': 'Could not copy: {message}',
@@ -166,6 +174,14 @@ window.__ModuleLoader__.load({
       'card.updating': '正在更新画布…',
       'card.failed': '画布生成失败',
       'card.version': 'v{version}',
+      'card.expand': '展开预览',
+      'card.fullscreen': '全屏',
+      'card.collapse': '收起预览',
+      'canvas.back': '后退',
+      'canvas.forward': '前进',
+      'canvas.recent': '最近打开',
+      'canvas.versions': '版本历史',
+      'canvas.latest': '最新',
       'error.load': '加载失败：{message}',
       'error.save': '保存失败：{message}',
       'error.copy': '复制失败：{message}',
@@ -193,34 +209,56 @@ window.__ModuleLoader__.load({
 .dsa-turn-list{display:flex;flex-direction:column;gap:10px;margin:6px 0}
 
 /* ---------------------------------------------------------------- cards */
-.dsa-card{--dsa-accent:#5b8cff;position:relative;box-sizing:border-box;display:flex;flex-direction:column;width:100%;max-width:680px;margin:4px 0;border:.5px solid var(--dsw-alias-border-l2,#3a3d44);border-radius:14px;background:var(--dsw-alias-bg-layer-1,#17191d);color:var(--dsw-alias-label-primary,#e7e8ea);overflow:hidden;transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}
-.dsa-card:hover{border-color:color-mix(in srgb,var(--dsa-accent) 52%,var(--dsw-alias-border-l2,#3a3d44));box-shadow:0 10px 28px rgba(0,0,0,.22);transform:translateY(-1px)}
+.dsa-card{--dsa-accent:#5b8cff;position:relative;box-sizing:border-box;display:flex;flex-direction:column;width:100%;max-width:680px;margin:6px 0;border:1px solid var(--dsw-alias-border-l2,#2a3240);border-radius:14px;background:var(--dsw-alias-bg-layer-1,#12161e);color:var(--dsw-alias-label-primary,#e7e8ea);overflow:hidden;transition:border-color .16s ease}
+.dsa-card:hover{border-color:color-mix(in srgb,var(--dsa-accent) 34%,var(--dsw-alias-border-l2,#2a3240))}
+.dsa-card[data-expanded="true"]{max-width:min(100%,920px)}
 .dsa-card[data-type="svg"]{--dsa-accent:#a371f7}
 .dsa-card[data-type="markdown"]{--dsa-accent:#41b883}
 .dsa-card[data-type="mermaid"]{--dsa-accent:#2bb3c0}
 .dsa-card[data-type="chart"]{--dsa-accent:#f2a93b}
 .dsa-card[data-type="code"]{--dsa-accent:#8b93a1}
-.dsa-card[data-state="error"]{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f85149) 45%,var(--dsw-alias-border-l2,#3a3d44))}
-.dsa-card-head{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;padding:9px 10px 9px 11px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.dsa-card-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px;border-radius:14px}
-.dsa-card-icon{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:9px;color:var(--dsa-accent);background:color-mix(in srgb,var(--dsa-accent) 14%,transparent);border:.5px solid color-mix(in srgb,var(--dsa-accent) 30%,transparent)}
+.dsa-card[data-state="error"]{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f85149) 45%,var(--dsw-alias-border-l2,#2a3240))}
+
+/* preview bleeds to the card edge: one frame, not a box in a box */
+.dsa-stage{position:relative;box-sizing:border-box;margin:0;overflow:hidden;background:#0f1319;border-bottom:1px solid var(--dsw-alias-border-l3,#1d2430)}
+.dsa-stage[data-kind="html"],.dsa-stage[data-kind="svg"]{aspect-ratio:16/9;height:auto}
+.dsa-stage[data-kind="chart"],.dsa-stage[data-kind="mermaid"]{height:238px}
+.dsa-stage[data-kind="markdown"]{height:206px;padding:16px 18px;background:var(--dsw-alias-bg-layer-1,#12161e)}
+.dsa-stage[data-kind="code"]{height:206px;background:var(--dsw-alias-markdown-code-block,#0e1013)}
+.dsa-stage-inline{height:auto;border-bottom:1px solid var(--dsw-alias-border-l3,#1d2430);background:#0f1319}
+.dsa-stage-inline[data-kind="html"],.dsa-stage-inline[data-kind="svg"]{aspect-ratio:16/9;height:auto;max-height:none}
+.dsa-stage-inline[data-kind="chart"],.dsa-stage-inline[data-kind="mermaid"],.dsa-stage-inline[data-kind="markdown"],.dsa-stage-inline[data-kind="code"]{height:clamp(360px,52vh,560px)}
+.dsa-thumb-frame{position:absolute;top:0;left:0;width:400%;height:400%;border:0;transform:scale(.25);transform-origin:0 0;pointer-events:none;background:#fff}
+.dsa-svg-img{display:block;width:100%;height:100%;object-fit:contain}
+.dsa-inline-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+.dsa-inline-img{display:block;width:100%;height:100%;object-fit:contain}
+.dsa-inline-scroll{position:absolute;inset:0;overflow:auto;scrollbar-width:thin}
+.dsa-inline-figure{padding:18px;box-sizing:border-box}
+.dsa-gridstage-svg{display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+.dsa-figure-img{max-width:100%;max-height:100%;object-fit:contain}
+/* native fullscreen keeps the full-size view outside the card's clipping */
+.dsa-stage:fullscreen{width:100vw;height:100vh;aspect-ratio:auto;max-height:none;border:0;background:#0e1116}
+.dsa-stage:fullscreen .dsa-thumb-frame{position:absolute;inset:0;width:100%;height:100%;transform:none;pointer-events:auto}
+.dsa-stage:fullscreen .dsa-svg-img,.dsa-stage:fullscreen .dsa-inline-img{width:100%;height:100%;object-fit:contain}
+
+/* title bar sits under the preview */
+.dsa-card-head{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;padding:8px 10px 8px 11px;border:0;background:none;color:inherit;font:inherit;text-align:left}
+.dsa-headbtn{appearance:none;display:flex;align-items:center;gap:9px;flex:1;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.dsa-headbtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px;border-radius:9px}
+.dsa-caret{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:6px;color:var(--dsw-alias-label-tertiary,#8b9098)}
+.dsa-headbtn:hover .dsa-caret{color:var(--dsa-accent)}
+.dsa-card-icon{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:8px;color:var(--dsa-accent);background:color-mix(in srgb,var(--dsa-accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsa-accent) 24%,transparent)}
 .dsa-card-headtext{display:flex;flex-direction:column;min-width:0;flex:1;gap:1px}
-.dsa-card-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;line-height:19px;letter-spacing:-.006em;color:var(--dsw-alias-label-primary,#e7e8ea)}
-.dsa-card-sub{display:flex;align-items:center;gap:6px;min-width:0;font-size:10.5px;line-height:15px;color:var(--dsw-alias-label-tertiary,#8b9098);white-space:nowrap}
+.dsa-card-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;line-height:18px;letter-spacing:-.006em;color:var(--dsw-alias-label-primary,#e7e8ea)}
+.dsa-card-sub{display:flex;align-items:center;gap:6px;min-width:0;font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary,#8b9098);white-space:nowrap}
 .dsa-dot{width:5px;height:5px;border-radius:50%;background:var(--dsa-accent);flex:none}
 .dsa-sep{width:2px;height:2px;border-radius:1px;background:currentColor;opacity:.45;flex:none}
-.dsa-open{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:8px;border:.5px solid var(--dsw-alias-border-l2,#3a3d44);background:var(--dsw-alias-bg-layer-2,#202329);color:var(--dsw-alias-label-secondary,#9aa0a8);font-size:11.5px;font-weight:500;line-height:1;white-space:nowrap;transition:color .14s,background-color .14s,border-color .14s}
-.dsa-card:hover .dsa-open{color:var(--dsa-accent);border-color:color-mix(in srgb,var(--dsa-accent) 40%,var(--dsw-alias-border-l2,#3a3d44));background:color-mix(in srgb,var(--dsa-accent) 10%,var(--dsw-alias-bg-layer-2,#202329))}
-
-/* preview stage */
-.dsa-stage{position:relative;box-sizing:border-box;height:212px;margin:0 10px 10px;border-radius:10px;overflow:hidden;border:.5px solid var(--dsw-alias-border-l1,#2c2f35);background:var(--dsw-alias-bg-layer-2,#202329)}
-.dsa-stage[data-tone="paper"]{display:flex;padding:9px;background:linear-gradient(150deg,color-mix(in srgb,var(--dsa-accent) 9%,var(--dsw-alias-bg-layer-2,#202329)),var(--dsw-alias-bg-layer-2,#202329) 62%)}
-.dsa-stage[data-tone="theme"]{background-color:var(--dsw-alias-bg-layer-2,#202329);background-image:radial-gradient(color-mix(in srgb,var(--dsw-alias-label-tertiary,#8b9098) 26%,transparent) 1px,transparent 1px);background-size:12px 12px;background-position:center}
-.dsa-stage[data-kind="markdown"]{padding:14px 16px;background-image:none}
-.dsa-stage[data-kind="code"]{background-image:none;background:var(--dsw-alias-markdown-code-block,#0e1013)}
-.dsa-paper{position:relative;flex:1;min-width:0;border-radius:7px;overflow:hidden;background:#fff;box-shadow:0 8px 22px rgba(0,0,0,.26),0 0 0 .5px rgba(0,0,0,.1)}
-.dsa-paper-frame{position:absolute;top:0;left:0;width:400%;height:400%;border:0;transform:scale(.25);transform-origin:0 0;pointer-events:none;background:#fff}
-.dsa-paper-img{display:block;width:100%;height:100%;object-fit:contain;padding:12px;box-sizing:border-box;background:#fff}
+.dsa-ghost{appearance:none;flex:none;display:grid;place-items:center;width:26px;height:26px;padding:0;border:0;border-radius:7px;background:none;color:var(--dsw-alias-label-tertiary,#8b9098);cursor:pointer;transition:color .12s,background-color .12s}
+.dsa-ghost:hover{color:var(--dsw-alias-label-primary,#e7e8ea);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13))}
+.dsa-ghost:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px}
+.dsa-open{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border:0;border-radius:7px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);font-size:11.5px;font-weight:500;line-height:1;white-space:nowrap;cursor:pointer;transition:color .14s,background-color .14s}
+.dsa-card:hover .dsa-open{color:var(--dsa-accent);background:color-mix(in srgb,var(--dsa-accent) 10%,transparent)}
+.dsa-open:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px}
 .dsa-md-preview{height:100%;overflow:hidden;font-size:12px;line-height:1.62;color:var(--dsw-alias-label-primary,#e7e8ea);-webkit-mask-image:linear-gradient(#000 72%,transparent);mask-image:linear-gradient(#000 72%,transparent)}
 .dsa-md-preview h1,.dsa-md-preview h2,.dsa-md-preview h3{margin:.5em 0 .35em;line-height:1.3}
 .dsa-md-preview h1{font-size:18px}
@@ -259,7 +297,20 @@ window.__ModuleLoader__.load({
 .dsa-seg .dsa-btn[aria-pressed="true"]{background:var(--dsw-alias-bg-layer-1,#17191d);box-shadow:0 1px 2px rgba(0,0,0,.25);border-color:var(--dsw-alias-border-l2,#3a3d44)}
 .dsa-select{appearance:none;height:28px;max-width:118px;border:.5px solid var(--dsw-alias-border-l2,#3a3d44);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#202329);color:var(--dsw-alias-label-secondary,#9aa0a8);padding:0 7px;font:inherit;font-size:11px;cursor:pointer}
 .dsa-select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:1px}
-.dsa-body{flex:1;min-height:0;position:relative;background:var(--dsw-alias-bg-base,#111317)}
+.dsa-body{flex:1;min-height:0;position:relative;display:flex;background:var(--dsw-alias-bg-base,#111317)}
+.dsa-pane{position:relative;flex:1;min-width:0}
+.dsa-nav{display:flex;align-items:center;gap:2px;flex:none}
+.dsa-nav-select{max-width:170px}
+.dsa-versions{flex:none;display:flex;flex-direction:column;width:188px;min-width:0;border-left:.5px solid var(--dsw-alias-border-l3,#2c2f35);background:var(--dsw-alias-bg-layer-1,#17191d)}
+.dsa-versions-head{flex:none;padding:9px 11px;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,#8b9098);border-bottom:.5px solid var(--dsw-alias-border-l3,#2c2f35)}
+.dsa-versions-body{flex:1;min-height:0;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
+.dsa-version{appearance:none;display:flex;flex-direction:column;gap:1px;width:100%;box-sizing:border-box;border:.5px solid transparent;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);padding:6px 8px;font:inherit;text-align:left;cursor:pointer}
+.dsa-version:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13))}
+.dsa-version[data-active="true"]{background:color-mix(in srgb,var(--dsa-accent) 14%,transparent);border-color:color-mix(in srgb,var(--dsa-accent) 38%,transparent);color:var(--dsw-alias-label-primary,#e7e8ea)}
+.dsa-version-v{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600}
+.dsa-version-now{font-size:9.5px;font-weight:500;padding:0 5px;border-radius:99px;background:color-mix(in srgb,var(--dsa-accent) 22%,transparent);color:var(--dsa-accent)}
+.dsa-version-time{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary,#8b9098)}
+.dsa-version-size{font-size:10px;color:var(--dsw-alias-label-tertiary,#8b9098);opacity:.78}
 .dsa-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
 .dsa-sheetwrap{position:absolute;inset:0;display:flex;padding:16px;box-sizing:border-box;background-color:var(--dsw-alias-bg-base,#111317);background-image:radial-gradient(color-mix(in srgb,var(--dsw-alias-label-tertiary,#8b9098) 24%,transparent) 1px,transparent 1px);background-size:15px 15px;background-position:center}
 .dsa-sheet{position:relative;flex:1;min-width:0;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 14px 38px rgba(0,0,0,.34),0 0 0 .5px rgba(0,0,0,.12)}
@@ -331,9 +382,13 @@ window.__ModuleLoader__.load({
 
 @media (max-width:640px){
   .dsa-card{max-width:100%}
-  .dsa-stage{height:176px}
+  .dsa-stage[data-kind="chart"],.dsa-stage[data-kind="mermaid"]{height:190px}
+  .dsa-stage[data-kind="markdown"],.dsa-stage[data-kind="code"]{height:172px}
+  .dsa-stage-inline[data-kind="chart"],.dsa-stage-inline[data-kind="mermaid"],.dsa-stage-inline[data-kind="markdown"],.dsa-stage-inline[data-kind="code"]{height:clamp(300px,48vh,460px)}
   .dsa-bar{padding:8px}
   .dsa-btn{padding:0 6px}
+  .dsa-nav-select{max-width:128px}
+  .dsa-versions{width:148px}
   .dsa-sheetwrap,.dsa-gridstage{padding:10px}
   .dsa-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .dsa-tile-art{height:108px}
@@ -631,6 +686,88 @@ window.__ModuleLoader__.load({
       } catch {}
     }
 
+    /** LocalStorage key holding each canvas tab's visit history. */
+    const HISTORY_KEY = 'dsh-artifacts:history';
+    /** Visited artifacts kept per canvas tab; the oldest fall off. */
+    const MAX_HISTORY = 12;
+
+    /**
+     * Read one canvas tab's visit history.
+     * @param sessionId - owning chat.
+     * @param tabId - tab identity.
+     * @returns `{ entries, index }`, where `index` points at the shown entry.
+     */
+    function readHistory(sessionId, tabId) {
+      const empty = { entries: [], index: -1 };
+      if (typeof tabId !== 'string' || tabId === '') return empty;
+      try {
+        const table = JSON.parse(window.localStorage.getItem(HISTORY_KEY) ?? '{}');
+        const value = table !== null && typeof table === 'object' ? table[`${sessionId}:${tabId}`] : undefined;
+        if (value === null || typeof value !== 'object' || !Array.isArray(value.entries)) return empty;
+        const entries = value.entries
+          .filter((entry) => entry !== null && typeof entry === 'object' && typeof entry.id === 'string' && entry.id !== '')
+          .map((entry) => ({ id: entry.id, title: typeof entry.title === 'string' ? entry.title : '' }))
+          .slice(-MAX_HISTORY);
+        if (entries.length === 0) return empty;
+        const index = Number.isInteger(value.index)
+          ? Math.min(Math.max(value.index, 0), entries.length - 1)
+          : entries.length - 1;
+        return { entries, index };
+      } catch {
+        return empty;
+      }
+    }
+
+    /**
+     * Persist one canvas tab's visit history.
+     * @param sessionId - owning chat.
+     * @param tabId - tab identity.
+     * @param history - entries and cursor.
+     */
+    function writeHistory(sessionId, tabId, history) {
+      if (typeof tabId !== 'string' || tabId === '') return;
+      try {
+        const table = JSON.parse(window.localStorage.getItem(HISTORY_KEY) ?? '{}');
+        const next = table !== null && typeof table === 'object' ? table : {};
+        next[`${sessionId}:${tabId}`] = history;
+        window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      } catch {}
+    }
+
+    /** LocalStorage key remembering which transcript cards are expanded. */
+    const EXPANDED_KEY = 'dsh-artifacts:expanded';
+
+    /**
+     * Read one card's expanded state.
+     * @param id - artifact id.
+     * @returns whether the card renders its full inline preview.
+     */
+    function expandedFor(id) {
+      if (typeof id !== 'string' || id === '') return false;
+      try {
+        const table = JSON.parse(window.localStorage.getItem(EXPANDED_KEY) ?? '{}');
+        return table !== null && typeof table === 'object' && table[id] === true;
+      } catch {
+        return false;
+      }
+    }
+
+    /**
+     * Persist one card's expanded state.
+     * @param id - artifact id.
+     * @param value - whether the card is expanded.
+     */
+    function rememberExpanded(id, value) {
+      if (typeof id !== 'string' || id === '') return;
+      try {
+        const table = JSON.parse(window.localStorage.getItem(EXPANDED_KEY) ?? '{}');
+        const next = table !== null && typeof table === 'object' ? table : {};
+        if (value === true) next[id] = true;
+        else delete next[id];
+        window.localStorage.setItem(EXPANDED_KEY, JSON.stringify(next));
+      } catch {}
+    }
+
     // ------------------------------------------------------------ data hooks
 
     /**
@@ -833,10 +970,11 @@ window.__ModuleLoader__.load({
      */
     function HtmlFrame({ sessionId, artifact, version, interactive = false }) {
       return h('iframe', {
-        className: interactive ? 'dsa-frame' : 'dsa-paper-frame',
+        className: interactive ? 'dsa-frame' : 'dsa-thumb-frame',
         src: rawUrl(sessionId, artifact, version),
         title: artifact.title,
         sandbox: 'allow-scripts allow-forms allow-modals allow-popups allow-downloads',
+        allowFullScreen: true,
         referrerPolicy: 'no-referrer',
         loading: 'lazy',
       });
@@ -1324,7 +1462,7 @@ try {
       if (type === 'html') return h(HtmlFrame, { sessionId, artifact, version });
       if (type === 'svg') {
         return h('img', {
-          className: 'dsa-paper-img',
+          className: 'dsa-svg-img',
           src: rawUrl(sessionId, artifact, version),
           alt: artifact.title,
         });
@@ -1344,6 +1482,43 @@ try {
       if (type === 'chart') return h(ChartArtifact, { text: content, compact: true });
       if (type === 'mermaid') return h(MermaidArtifact, { text: content, compact: true });
       return h('pre', { className: 'dsa-code-snippet' }, content.split('\n').slice(0, 14).join('\n'));
+    }
+
+    /**
+     * Inline rendering used when a transcript card is expanded: unlike the
+     * thumbnail it fills a tall stage and accepts input, so an HTML page can be
+     * used without leaving the conversation.
+     * @param props.sessionId - owning chat.
+     * @param props.artifact - descriptor.
+     * @param props.version - exact version.
+     * @param props.content - text, when the type needs it.
+     * @param props.t - translator.
+     * @returns the preview element.
+     */
+    function InlineArtifact({ sessionId, artifact, version, content, t }) {
+      const type = artifact.type;
+      if (type === 'html') {
+        return h('iframe', {
+          className: 'dsa-inline-frame',
+          src: rawUrl(sessionId, artifact, version),
+          title: artifact.title,
+          sandbox: 'allow-scripts allow-forms allow-modals allow-popups allow-downloads',
+          allowFullScreen: true,
+          referrerPolicy: 'no-referrer',
+        });
+      }
+      if (type === 'svg') {
+        return h('img', { className: 'dsa-inline-img', src: rawUrl(sessionId, artifact, version), alt: artifact.title });
+      }
+      if (content === undefined || content === null) {
+        return h('div', { className: 'dsa-center' }, h('span', { className: 'dsa-spin' }));
+      }
+      if (type === 'markdown') return h(MarkdownArtifact, { text: content, t });
+      if (type === 'code') return h(CodeArtifact, { text: content });
+      if (type === 'chart') {
+        return h('div', { className: 'dsa-inline-scroll dsa-inline-figure' }, h(ChartArtifact, { text: content }));
+      }
+      return h('div', { className: 'dsa-inline-scroll dsa-inline-figure' }, h(MermaidArtifact, { text: content }));
     }
 
     /**
@@ -1370,6 +1545,7 @@ try {
               src: rawUrl(sessionId, artifact, version),
               title: artifact.title,
               sandbox: 'allow-scripts allow-forms allow-modals allow-popups allow-downloads',
+              allowFullScreen: true,
               referrerPolicy: 'no-referrer',
               loading: 'lazy',
             }),
@@ -1379,12 +1555,8 @@ try {
       if (type === 'svg') {
         return h(
           'div',
-          { className: 'dsa-sheetwrap' },
-          h(
-            'div',
-            { className: 'dsa-sheet dsa-sheet-svg' },
-            h('img', { className: 'dsa-sheet-img', src: rawUrl(sessionId, artifact, version), alt: artifact.title }),
-          ),
+          { className: 'dsa-gridstage dsa-gridstage-svg' },
+          h('img', { className: 'dsa-figure-img', src: rawUrl(sessionId, artifact, version), alt: artifact.title }),
         );
       }
       if (content === undefined || content === null) {
@@ -1445,11 +1617,36 @@ try {
         const needsText = TEXT_PREVIEW_TYPES.has(entry.type);
         const content = useArtifactVersion(sessionId, needsText ? entry.id : '', entry.version);
         const [opening, setOpening] = React.useState(false);
-        const paper = entry.type === 'html' || entry.type === 'svg';
+        const [expanded, setExpanded] = React.useState(() => expandedFor(entry.id));
+        const stageRef = React.useRef(null);
 
         React.useEffect(() => {
           bus.setTitle(entry.id, entry.title);
         }, [entry.id, entry.title]);
+
+        React.useEffect(() => {
+          setExpanded(expandedFor(entry.id));
+        }, [entry.id]);
+
+        const toggle = () => {
+          setExpanded((value) => {
+            rememberExpanded(entry.id, !value);
+            return !value;
+          });
+        };
+
+        const toggleFullscreen = () => {
+          const node = stageRef.current;
+          if (node === null) return;
+          try {
+            if (document.fullscreenElement === node) {
+              void document.exitFullscreen?.();
+              return;
+            }
+            const result = node.requestFullscreen?.();
+            if (result !== undefined && result !== null && typeof result.catch === 'function') result.catch(() => {});
+          } catch {}
+        };
 
         const open = () => {
           setOpening(true);
@@ -1460,75 +1657,104 @@ try {
           }
         };
 
+        const stage = expanded
+          ? h(
+              'div',
+              { ref: stageRef, className: 'dsa-stage dsa-stage-inline', 'data-kind': entry.type },
+              h(InlineArtifact, {
+                sessionId,
+                artifact: entry,
+                version: entry.version,
+                content: content.data?.content,
+                t,
+              }),
+            )
+          : h(
+              'div',
+              {
+                ref: stageRef,
+                className: 'dsa-stage',
+                'data-kind': entry.type,
+                onClick: toggle,
+                role: 'button',
+                tabIndex: 0,
+                'aria-label': tr(t, 'card.expand'),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggle();
+                  }
+                },
+              },
+              h(ArtifactPreview, {
+                sessionId,
+                artifact: entry,
+                version: entry.version,
+                content: content.data?.content,
+                t,
+              }),
+            );
+
         return h(
           'div',
           {
             className: 'dsa-card',
             'data-type': entry.type,
             'data-state': 'ready',
+            'data-expanded': expanded ? 'true' : 'false',
             title: entry.description === '' ? entry.title : entry.description,
           },
+          stage,
           h(
-            'button',
-            {
-              type: 'button',
-              className: 'dsa-card-head',
-              onClick: open,
-              title: tr(t, 'card.open'),
-            },
-            h('span', { className: 'dsa-card-icon' }, h(TypeGlyph, { type: entry.type, size: 16 })),
+            'div',
+            { className: 'dsa-card-head' },
             h(
-              'span',
-              { className: 'dsa-card-headtext' },
-              h('span', { className: 'dsa-card-title' }, entry.title),
+              'button',
+              {
+                type: 'button',
+                className: 'dsa-headbtn',
+                onClick: toggle,
+                title: tr(t, expanded ? 'card.collapse' : 'card.expand'),
+                'aria-expanded': expanded,
+              },
+              h('span', { className: 'dsa-card-icon' }, h(TypeGlyph, { type: entry.type, size: 15 })),
               h(
                 'span',
-                { className: 'dsa-card-sub' },
-                h('span', { className: 'dsa-dot' }),
-                h('span', null, tr(t, `type.${entry.type}`)),
-                h('span', { className: 'dsa-sep' }),
-                h('span', null, tr(t, 'card.version', { version: entry.version })),
+                { className: 'dsa-card-headtext' },
+                h('span', { className: 'dsa-card-title' }, entry.title),
+                h(
+                  'span',
+                  { className: 'dsa-card-sub' },
+                  h('span', null, tr(t, `type.${entry.type}`)),
+                  h('span', { className: 'dsa-sep' }),
+                  h('span', null, tr(t, 'card.version', { version: entry.version })),
+                ),
               ),
+              h(
+                'span',
+                { className: 'dsa-caret' },
+                h(expanded ? primitives.IconChevronUpOutlineRegular : primitives.IconChevronDownOutlineRegular, { size: 13 }),
+              ),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsa-ghost',
+                title: tr(t, 'card.fullscreen'),
+                'aria-label': tr(t, 'card.fullscreen'),
+                onClick: toggleFullscreen,
+              },
+              h(primitives.IconFullscreenOutlineRegular, { size: 14 }),
             ),
             opening
               ? h('span', { className: 'dsa-spin' })
               : h(
-                  'span',
-                  { className: 'dsa-open' },
+                  'button',
+                  { type: 'button', className: 'dsa-open', onClick: open, title: tr(t, 'card.open') },
                   h(primitives.IconPanelLeftOutlineRegular, { size: 13 }),
                   h('span', null, tr(t, 'card.open')),
                 ),
-          ),
-          h(
-            'div',
-            {
-              className: 'dsa-stage',
-              'data-tone': paper ? 'paper' : 'theme',
-              'data-kind': entry.type,
-              onClick: open,
-              role: 'button',
-              tabIndex: -1,
-              'aria-hidden': true,
-            },
-            paper
-              ? h(
-                  'div',
-                  { className: 'dsa-paper' },
-                  h(ArtifactPreview, {
-                    sessionId,
-                    artifact: entry,
-                    version: entry.version,
-                    content: content.data?.content,
-                    t,
-                  }),
-                )
-              : h(ArtifactPreview, {
-                  sessionId,
-                  artifact: entry,
-                  version: entry.version,
-                  content: content.data?.content,
-                  t,
-                }),
           ),
           content.error !== null && needsText
             ? h('div', { className: 'dsa-card-error' }, tr(t, 'error.load', { message: content.error }))
@@ -1655,6 +1881,13 @@ try {
       const [nameDraft, setNameDraft] = React.useState('');
       const [confirmDelete, setConfirmDelete] = React.useState(false);
       const [busy, setBusy] = React.useState(false);
+      const [showVersions, setShowVersions] = React.useState(false);
+      const [history, setHistory] = React.useState(() => readHistory(sessionId, tabId));
+      /** Latest history, readable from callbacks without re-subscribing. */
+      const historyRef = React.useRef(history);
+      historyRef.current = history;
+      /** Index a fresh navigation should land on; `-1` when it is a new visit. */
+      const jumpIndex = React.useRef(-1);
 
       const view = useArtifactVersion(sessionId, id, selected);
       const artifact = view.data?.artifact;
@@ -1672,6 +1905,75 @@ try {
       React.useEffect(() => {
         if (paramId !== '') rememberArtifact(sessionId, tabId, paramId);
       }, [paramId, sessionId, tabId]);
+
+      React.useEffect(() => {
+        setShowVersions(false);
+      }, [id]);
+
+      React.useEffect(() => {
+        if (paramId === '') return;
+        const prev = historyRef.current;
+        const title = bus.titles.get(paramId) ?? '';
+        let next = prev;
+        if (jumpIndex.current >= 0) {
+          const target = jumpIndex.current;
+          jumpIndex.current = -1;
+          if (prev.entries[target] !== undefined && prev.entries[target].id === paramId) {
+            next = { ...prev, index: target };
+          }
+        } else if (prev.entries[prev.index] !== undefined && prev.entries[prev.index].id === paramId) {
+          if (title !== '' && prev.entries[prev.index].title !== title) {
+            next = {
+              ...prev,
+              entries: prev.entries.map((entry, index) => (index === prev.index ? { ...entry, title } : entry)),
+            };
+          }
+        } else {
+          const seen = prev.entries.findIndex((entry) => entry.id === paramId);
+          if (seen >= 0) {
+            next = {
+              entries: prev.entries.map((entry, index) => (index === seen && title !== '' ? { ...entry, title } : entry)),
+              index: seen,
+            };
+          } else {
+            const entries = [...prev.entries.slice(0, prev.index + 1), { id: paramId, title }].slice(-MAX_HISTORY);
+            next = { entries, index: entries.length - 1 };
+          }
+        }
+        if (next === prev) return;
+        historyRef.current = next;
+        setHistory(next);
+        writeHistory(sessionId, tabId, next);
+      }, [paramId, sessionId, tabId]);
+
+      React.useEffect(() => {
+        if (artifact === undefined) return;
+        const prev = historyRef.current;
+        const entry = prev.entries[prev.index];
+        if (entry === undefined || entry.id !== artifact.id || entry.title === artifact.title) return;
+        const next = {
+          ...prev,
+          entries: prev.entries.map((row, index) => (index === prev.index ? { ...row, title: artifact.title } : row)),
+        };
+        historyRef.current = next;
+        setHistory(next);
+        writeHistory(sessionId, tabId, next);
+      }, [artifact?.id, artifact?.title, sessionId, tabId]);
+
+      const goTo = React.useCallback(
+        (index) => {
+          const current = historyRef.current;
+          if (index < 0 || index >= current.entries.length || index === current.index) return;
+          const entry = current.entries[index];
+          jumpIndex.current = index;
+          try {
+            info?.tab?.actions?.openTab(ARTIFACT_KIND, { params: { artifact: entry.id } });
+          } catch {
+            jumpIndex.current = -1;
+          }
+        },
+        [info],
+      );
 
       React.useEffect(() => {
         if (artifact !== undefined) {
@@ -1821,6 +2123,52 @@ try {
         h(
           'div',
           { className: 'dsa-bar' },
+          h(
+            'div',
+            { className: 'dsa-nav' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsa-btn',
+                title: tr(t, 'canvas.back'),
+                'aria-label': tr(t, 'canvas.back'),
+                onClick: () => goTo(history.index - 1),
+                disabled: history.index <= 0,
+              },
+              h(primitives.IconChevronLeftOutlineRegular, { size: 13 }),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsa-btn',
+                title: tr(t, 'canvas.forward'),
+                'aria-label': tr(t, 'canvas.forward'),
+                onClick: () => goTo(history.index + 1),
+                disabled: history.index < 0 || history.index >= history.entries.length - 1,
+              },
+              h(primitives.IconChevronRightOutlineRegular, { size: 13 }),
+            ),
+            history.entries.length > 1
+              ? h(
+                  'select',
+                  {
+                    className: 'dsa-select dsa-nav-select',
+                    value: String(history.index),
+                    title: tr(t, 'canvas.recent'),
+                    onChange: (event) => goTo(Number(event.target.value)),
+                  },
+                  history.entries.map((entry, index) =>
+                    h(
+                      'option',
+                      { key: `${entry.id}:${index}`, value: String(index) },
+                      `${index + 1}. ${entry.title === '' ? tr(t, 'tab.artifact') : entry.title}`,
+                    ),
+                  ),
+                )
+              : null,
+          ),
           h('span', { className: 'dsa-bar-icon' }, h(TypeGlyph, { type: artifact.type, size: 14 })),
           h(
             'div',
@@ -1858,18 +2206,16 @@ try {
             { className: 'dsa-tools' },
             artifact.versions.length > 1
               ? h(
-                  'select',
+                  'button',
                   {
-                    className: 'dsa-select',
-                    value: String(shownVersion),
-                    title: tr(t, 'canvas.version'),
-                    onChange: (event) => setSelected(Number(event.target.value)),
+                    type: 'button',
+                    className: 'dsa-btn',
+                    title: tr(t, 'canvas.versions'),
+                    'aria-pressed': showVersions,
+                    onClick: () => setShowVersions((value) => !value),
                   },
-                  [...artifact.versions]
-                    .sort((left, right) => right.v - left.v)
-                    .map((record) =>
-                      h('option', { key: record.v, value: String(record.v) }, `v${record.v}${record.v === latest ? ` · ${tr(t, 'canvas.current')}` : ''}`),
-                    ),
+                  h(primitives.IconClockOutlineRegular, { size: 13 }),
+                  h('span', null, `v${shownVersion}/${latest}`),
                 )
               : null,
             showSource
@@ -1968,44 +2314,82 @@ try {
         h(
           'div',
           { className: 'dsa-body' },
-          mode === 'edit'
+          h(
+            'div',
+            { className: 'dsa-pane' },
+            mode === 'edit'
+              ? h(
+                  'div',
+                  { className: 'dsa-editor' },
+                  h('textarea', {
+                    value: draft,
+                    spellCheck: false,
+                    onChange: (event) => setDraft(event.target.value),
+                    onKeyDown: (event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+                        event.preventDefault();
+                        void save();
+                      }
+                    },
+                  }),
+                  h(
+                    'div',
+                    { className: 'dsa-editor-bar' },
+                    h('span', null, tr(t, 'canvas.editHint', { version: shownVersion })),
+                    h('button', { type: 'button', className: 'dsa-btn', onClick: () => setMode('preview') }, tr(t, 'canvas.cancel')),
+                    h(
+                      'button',
+                      { type: 'button', className: 'dsa-btn dsa-primary', onClick: () => void save(), disabled: busy || draft === content },
+                      busy ? tr(t, 'canvas.saving') : tr(t, 'canvas.save'),
+                    ),
+                  ),
+                )
+              : mode === 'code'
+                ? content === undefined
+                  ? h('div', { className: 'dsa-center' }, h('span', { className: 'dsa-spin' }), tr(t, 'canvas.loading'))
+                  : h(CodeArtifact, { text: content })
+                : h(CanvasPreview, {
+                    sessionId,
+                    artifact,
+                    version: shownVersion,
+                    content,
+                    t,
+                  }),
+          ),
+          showVersions && artifact.versions.length > 1
             ? h(
                 'div',
-                { className: 'dsa-editor' },
-                h('textarea', {
-                  value: draft,
-                  spellCheck: false,
-                  onChange: (event) => setDraft(event.target.value),
-                  onKeyDown: (event) => {
-                    if ((event.metaKey || event.ctrlKey) && event.key === 's') {
-                      event.preventDefault();
-                      void save();
-                    }
-                  },
-                }),
+                { className: 'dsa-versions' },
+                h('div', { className: 'dsa-versions-head' }, tr(t, 'canvas.versions')),
                 h(
                   'div',
-                  { className: 'dsa-editor-bar' },
-                  h('span', null, tr(t, 'canvas.editHint', { version: shownVersion })),
-                  h('button', { type: 'button', className: 'dsa-btn', onClick: () => setMode('preview') }, tr(t, 'canvas.cancel')),
-                  h(
-                    'button',
-                    { type: 'button', className: 'dsa-btn dsa-primary', onClick: () => void save(), disabled: busy || draft === content },
-                    busy ? tr(t, 'canvas.saving') : tr(t, 'canvas.save'),
-                  ),
+                  { className: 'dsa-versions-body' },
+                  [...artifact.versions]
+                    .sort((left, right) => right.v - left.v)
+                    .map((record) =>
+                      h(
+                        'button',
+                        {
+                          key: record.v,
+                          type: 'button',
+                          className: 'dsa-version',
+                          'data-active': record.v === shownVersion ? 'true' : 'false',
+                          title: timeLabel(record.createdAt, t),
+                          onClick: () => setSelected(record.v === latest ? undefined : record.v),
+                        },
+                        h(
+                          'span',
+                          { className: 'dsa-version-v' },
+                          `v${record.v}`,
+                          record.v === latest ? h('span', { className: 'dsa-version-now' }, tr(t, 'canvas.latest')) : null,
+                        ),
+                        h('span', { className: 'dsa-version-time' }, timeLabel(record.createdAt, t)),
+                        h('span', { className: 'dsa-version-size' }, bytesLabel(record.bytes)),
+                      ),
+                    ),
                 ),
               )
-            : mode === 'code'
-              ? content === undefined
-                ? h('div', { className: 'dsa-center' }, h('span', { className: 'dsa-spin' }), tr(t, 'canvas.loading'))
-                : h(CodeArtifact, { text: content })
-              : h(CanvasPreview, {
-                  sessionId,
-                  artifact,
-                  version: shownVersion,
-                  content,
-                  t,
-                }),
+            : null,
         ),
         h(
           'div',

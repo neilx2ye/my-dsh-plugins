@@ -614,7 +614,7 @@ export function apply(ctx, config) {
           text: ({ scope }) =>
             ctx.tools.get('artifact_create', scope) === undefined
               ? ''
-              : 'Artifacts: create one with artifact_create on your own initiative whenever the deliverable is visual, interactive, diagrammed, charted, or long-form — the user does NOT need to name the tool. Typical triggers: a web page, app, widget, or demo; a flow, architecture, or sequence diagram; a chart built from data; a formatted report, plan, or release note longer than a couple of paragraphs; a substantial code sample meant for reading. Keep the chat reply to at most two short sentences (what it is, one next step) and do not paste the document into the transcript. Revise an existing artifact with artifact_update (whole content or exact edits) instead of creating a duplicate, and use artifact_list to find its id. Do not use an artifact for a short snippet, a brief inline answer, or a file the user asked to save in the repository — write those directly.',
+              : 'Artifacts: create one with artifact_create on your own initiative whenever the deliverable is visual, interactive, diagrammed, charted, or long-form — the user does NOT need to name the tool. Typical triggers: a web page, app, widget, or demo; a flow, architecture, or sequence diagram; a chart built from data; a formatted report, plan, or release note longer than a couple of paragraphs; a substantial code sample meant for reading. Keep the chat reply to at most two short sentences (what it is, one next step) and do not paste the document into the transcript. Revise an existing artifact with artifact_update (whole content or exact edits) instead of creating a duplicate, and use artifact_list to find its id. Do not use an artifact for a short snippet, a brief inline answer, or a file the user asked to save in the repository — write those directly. Design quality: one restrained palette (an accent plus neutrals), one clear type scale, generous spacing, and real data or none; avoid decorative gradients, nested containers, invented legends, and micro-labels under ~12px — the content, not the chrome, should carry the layout.',
         }),
       'dsh-artifacts: prompt section',
     );
@@ -631,7 +631,7 @@ export function apply(ctx, config) {
       `id: ${value.id}`,
       `kind: ${value.type} · version: v${value.version} · ${value.bytes} bytes`,
       `file: ${value.path}`,
-      'The user sees this artifact as a card in the chat and can open it in the canvas panel.',
+      'The user sees this artifact as a card in the chat (click it to expand the live preview in place) and in the canvas panel.',
     ].join('\n');
   }
 

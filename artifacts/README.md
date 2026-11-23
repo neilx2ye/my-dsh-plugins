@@ -56,11 +56,17 @@ want the canvas for certain.
 
 - **Transcript card.** After a turn that created or revised artifacts, one card
   per artifact appears under the closing prose — not buried in the collapsed
-  tool group. HTML and SVG previews are live; Markdown, charts, and Mermaid
-  render inline.
-- **Canvas tab.** Click a card (or its *Open canvas* button) to open the canvas:
-  preview, source, and edit modes, version history with one-click restore,
-  rename, copy, download, and delete. `Ctrl/⌘+S` saves an edit as a new version.
+  tool group. The preview is flush with the card edge and sits on top, with a
+  quiet title bar underneath: one frame instead of a box in a box. HTML and SVG
+  use a 16:9 stage; charts and diagrams get 238px. Click the preview or title to
+  expand **in the conversation**, the expand chevron to collapse, and the
+  fullscreen button for a native full-size view (Esc exits). *Open canvas* still
+  opens the side panel; the expanded state is remembered per artifact.
+- **Canvas tab.** A card's *Open canvas* button opens the canvas: preview,
+  source, and edit modes, a version panel with timestamps and one-click
+  restore, back/forward through the canvases you have visited in this tab, a
+  recent-canvases list, rename, copy, download, and delete. `Ctrl/⌘+S` saves an
+  edit as a new version.
 - **Gallery.** The sparkle button in the conversation header, or the *Artifacts*
   entry in the right sidebar's add-tab menu, opens a gallery filtered to *This
   chat* or *This project*.
@@ -138,8 +144,13 @@ dsh plugin --profile web add https://example.com/local-dsh-artifacts-0.1.0.tgz
 ## Limitations
 
 - One canvas per chat: opening another artifact navigates the same tab instead
-  of stacking a second one. The tab remembers its subject across reloads in
+  of stacking a second one. The tab keeps up to 12 visited artifacts in a
+  back/forward history and remembers its subject across reloads in
   `localStorage`.
+- The inline expanded card follows the artifact's own ratio for HTML and SVG
+  (16:9) and uses `clamp(360px, 52vh, 560px)` for charts, Markdown, and code;
+  it is not a resizable split. Fullscreen uses the native Fullscreen API, so no
+  custom viewer chrome is drawn on top of the artifact.
 - Mermaid needs network access the first time (it imports the library from a
   CDN). Without it the canvas says so and the source stays available under
   **Source**.

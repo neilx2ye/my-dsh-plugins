@@ -4,7 +4,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 
 | Directory | Package | Version | What it does |
 | --- | --- | --- | --- |
-| `artifacts/` | `@local/dsh-artifacts` | 0.1.1 | Artifacts + canvas: HTML, SVG, charts, Mermaid, Markdown, and code the agent writes into a side panel with versions and editing |
+| `artifacts/` | `@local/dsh-artifacts` | 0.2.0 | Artifacts as expandable cards in the chat plus a canvas panel: HTML, SVG, charts, Mermaid, Markdown, and code with versions and editing |
 | `command-runner/` | `@local/command-runner` | 0.1.0 | Floating, tabbed shell window in DSH Web |
 | `codex-images/` | `@local/codex-images` | 0.1.2 | Project-scoped image gallery + `codex_image` tool |
 | `git-explorer/` | `@local/git-explorer` | 0.5.2 | Git browser for the current workspace |
@@ -24,21 +24,21 @@ need neither git nor registry credentials — only HTTPS.
 ## Install on a device
 
 Open DSH Web → **Plugins** → **Add plugin** and paste one tarball URL per plugin
-(replace `<owner>/<repo>` and `v0.8.1` with the release you want):
+(replace `<owner>/<repo>` and `v0.8.2` with the release you want):
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-dsh-artifacts-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-command-runner-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-codex-images-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-feishu-bridge-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-git-explorer-0.5.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-mcp-settings-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-user-switcher-0.2.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-personal-agent-0.5.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-system-usage-1.0.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-workspace-upload-0.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-workspace-download-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-dsh-artifacts-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-command-runner-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-codex-images-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-feishu-bridge-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-git-explorer-0.5.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-mcp-settings-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-user-switcher-0.2.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-web-push-notify-1.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-personal-agent-0.5.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-system-usage-1.0.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-upload-0.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-download-0.2.0.tgz
 ```
 
 After each install click **Enable now**, then restart `dsh web` when the profile has no HMR.
@@ -47,18 +47,18 @@ CLI equivalent:
 
 ```bash
 dsh plugin --profile web add \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-dsh-artifacts-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-command-runner-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-codex-images-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-feishu-bridge-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-git-explorer-0.5.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-mcp-settings-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-user-switcher-0.2.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-personal-agent-0.5.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-system-usage-1.0.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-workspace-upload-0.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.1/local-workspace-download-0.2.0.tgz
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-dsh-artifacts-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-command-runner-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-codex-images-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-feishu-bridge-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-git-explorer-0.5.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-mcp-settings-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-user-switcher-0.2.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-web-push-notify-1.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-personal-agent-0.5.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-system-usage-1.0.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-upload-0.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-download-0.2.0.tgz
 ```
 
 Installing only records the dependency. To load a bundle, click **Enable now**, or append its
@@ -115,7 +115,7 @@ bundle that differs from its directory here; `--apply` copies the package files 
 - **Feishu bridge**: `@local/feishu-bridge` needs a Feishu custom app with the bot capability and the message events above; it dials out to Feishu, so no public IP or callback URL is required. Credentials are entered in Settings.
 - **First push quirk**: pushing a brand-new branch and its first `v*` tag in one
   `git push` does not start the workflow. Push the branch first, then the tag
-  (`git push -u origin main` then `git push origin v0.8.1`), or re-push the tag alone.
+  (`git push -u origin main` then `git push origin v0.8.2`), or re-push the tag alone.
 
 ## Layout
 
