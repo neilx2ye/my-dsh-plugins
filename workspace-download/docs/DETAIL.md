@@ -5,8 +5,8 @@ Download files and folders from the execution device to the computer running the
 ## Where it appears
 
 - **Preview header** — open a file in the right Sidebar and use the download control in its header to save the original bytes of that file.
-- **Files page header** — the download control there saves the whole workspace as one ZIP.
-- **Folder context menu** — right-click a folder in the Files tree (or the workspace path label) and choose **Download as ZIP** to archive that folder.
+- **Files page header** — the download control there opens a small menu that archives the whole workspace as one ZIP. A checkbox decides whether the repository's **.git** directory is included; **Download** starts the transfer.
+- **Folder context menu** — right-click a folder in the Files tree (or the workspace path label) and choose **Download as ZIP (without .git)** or **Download as ZIP (with .git)**.
 
 All three use the browser's own download manager: the Host streams the bytes, so large files and archives are not buffered in the page.
 
@@ -20,9 +20,10 @@ All three use the browser's own download manager: the Host streams the bytes, so
 - The archive contains one top-level folder named after the downloaded directory, its files, and its subdirectories (including empty ones). A folder whose name already ends in `.zip` keeps that name.
 - Names are stored as UTF-8, and the response carries the exact archive length so the download manager can show progress.
 - Entries are **stored, not compressed**, so packing is fast and the archive is roughly the size of the folder. Files over 8 MiB are read twice (CRC, then bytes), and every file is rechecked while copying; a file that changes during packing fails the download rather than producing a corrupt archive.
-- Symbolic links are skipped; `.git`, `node_modules`, and hidden `.dsh-upload-*` staging files are left out (the staging prefix is not configurable). `exclude` changes the rest of that list.
+- Symbolic links are skipped; `node_modules` and hidden `.dsh-upload-*` staging files are left out by default (the staging prefix is not configurable). `exclude` changes the rest of that list.
+- `.git` is **not** in the default `exclude` list. It is left out unless the download asks for it, so each transfer decides: the Files header checkbox or the folder menu's "with .git" entry sends `git=1`, which overrides an `exclude` entry for `.git`.
 - One archive is capped at 20,000 entries (`maxEntries`, at most 65,534 because a classic ZIP stores the count in 16 bits) and 2 GiB of uncompressed content (`maxTotalBytes`). The planned archive, headers included, must stay below 4 GiB. A larger folder is refused with a notice — download a subfolder instead.
-- The Files page's whole-workspace control asks for confirmation and states the excludes and limits once the Host has reported them; the folder context menu does not confirm because the target is explicit.
+- The Files page's whole-workspace control asks in a menu that states the `node_modules` exclusion and the limits, and lets the user include `.git`; the folder context menu offers both variants directly because the target is explicit.
 
 ### Single files
 
@@ -37,8 +38,7 @@ The file route accepts any absolute path **on the local filesystem of the Host p
     maxEntries: 20000 # files and folders per archive
     maxTotalBytes: 2147483648 # uncompressed bytes per archive; classic ZIP cannot exceed 4 GiB
     exclude: # directory or file names skipped at every depth
-      - .git
-      - node_modules
+      - node_modules # .git stays optional and is chosen per download
 ```
 
 ## Not included

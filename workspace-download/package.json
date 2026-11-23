@@ -1,6 +1,6 @@
 {
   "name": "@local/workspace-download",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Download files, folders as ZIP, and the whole workspace from the Files side panel, streamed by the Host.",

@@ -150,6 +150,41 @@ test('archives a directory with names, contents, and directory entries', async (
   }
 });
 
+test('includes .git only when the download asks for it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'wd-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, 'repo');
+  await mkdir(join(directory, '.git', 'objects'), { recursive: true });
+  await mkdir(join(directory, 'node_modules', 'pkg'), { recursive: true });
+  await writeFile(join(directory, '.git', 'HEAD'), 'ref: x');
+  await writeFile(join(directory, '.gitignore'), 'node_modules\n');
+  await writeFile(join(directory, 'node_modules', 'pkg', 'index.js'), 'x');
+  await writeFile(join(directory, 'a.txt'), 'a');
+  const { zip, dispose } = await mount(root);
+  t.after(dispose);
+
+  const withoutGit = readZip(new Uint8Array(await (await zip(request(ZIP_ROUTE, {
+    sessionId: 'session-1', path: directory,
+  }))).arrayBuffer()));
+  assert.deepEqual(withoutGit.map((entry) => entry.name), [
+    'repo/',
+    'repo/.gitignore',
+    'repo/a.txt',
+  ]);
+
+  const withGit = readZip(new Uint8Array(await (await zip(request(ZIP_ROUTE, {
+    sessionId: 'session-1', path: directory, git: '1',
+  }))).arrayBuffer()));
+  assert.deepEqual(withGit.map((entry) => entry.name), [
+    'repo/',
+    'repo/.git/',
+    'repo/.git/HEAD',
+    'repo/.git/objects/',
+    'repo/.gitignore',
+    'repo/a.txt',
+  ]);
+});
+
 test('skips excluded and symlinked entries', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'wd-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -221,7 +256,7 @@ test('normalizes settings and clamps the archive size to ZIP32', () => {
   assert.deepEqual(readSettings(undefined), {
     maxEntries: 20000,
     maxTotalBytes: 2 * 1024 * 1024 * 1024,
-    exclude: ['.git', 'node_modules'],
+    exclude: ['node_modules'],
   });
   assert.deepEqual(readSettings({ maxEntries: 5, maxTotalBytes: 10, exclude: ['dist'] }), {
     maxEntries: 5,

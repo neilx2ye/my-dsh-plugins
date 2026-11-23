@@ -3,4 +3,4 @@
       name: '@local/workspace-upload'
       config:
         maxUploadBytes: 524288000
-        onConflict: rename
+        onConflict: ask

@@ -52,14 +52,25 @@ async function mount(root, config = {}, options = {}) {
   const upload = routes.find((route) => route.path === ROUTE);
   const limits = routes.find((route) => route.path === '/api/workspace-upload/limits');
   const directory = routes.find((route) => route.path === '/api/workspace-upload/dir');
-  assert.equal(routes.length, 3, 'the bundle registers the upload, limits, and directory routes');
+  const stat = routes.find((route) => route.path === '/api/workspace-upload/stat');
+  const dirs = routes.find((route) => route.path === '/api/workspace-upload/dirs');
+  assert.equal(routes.length, 5, 'the bundle registers upload, limits, directory, stat, and dirs routes');
   assert.ok(upload !== undefined, 'the upload route is registered');
   assert.ok(limits !== undefined, 'the limits route is registered');
   assert.ok(directory !== undefined, 'the directory route is registered');
+  assert.ok(stat !== undefined, 'the stat route is registered');
+  assert.ok(dirs !== undefined, 'the dirs route is registered');
   const dispose = async () => {
     for (const disposer of disposers) await disposer();
   };
-  return { fetch: upload.fetch, limits: limits.fetch, directory: directory.fetch, dispose };
+  return {
+    fetch: upload.fetch,
+    limits: limits.fetch,
+    directory: directory.fetch,
+    stat: stat.fetch,
+    dirs: dirs.fetch,
+    dispose,
+  };
 }
 
 /**
@@ -110,7 +121,7 @@ test('renames a taken name instead of replacing the file', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'report.txt'), 'original');
-  const { fetch, dispose } = await mount(root);
+  const { fetch, dispose } = await mount(root, { onConflict: 'rename' });
   t.after(dispose);
 
   const response = await fetch(request('sessionId=session-1&name=report.txt', 'second'));
@@ -134,6 +145,61 @@ test('replaces the file when the row asks for overwrite', async (t) => {
   const body = await response.json();
   assert.equal(body.value.replaced, true);
   assert.equal(await readFile(join(root, 'report.txt'), 'utf8'), 'replaced');
+});
+
+test('asks before replacing a taken name and replaces on request', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'report.txt'), 'original');
+  const { fetch, dispose } = await mount(root);
+  t.after(dispose);
+
+  const conflict = await fetch(request('sessionId=session-1&name=report.txt', 'next'));
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).code, 'name-conflict');
+  assert.equal(await readFile(join(root, 'report.txt'), 'utf8'), 'original');
+
+  const replaced = await fetch(request('sessionId=session-1&name=report.txt&overwrite=1', 'next'));
+  assert.equal(replaced.status, 200);
+  assert.equal((await replaced.json()).value.replaced, true);
+  assert.equal(await readFile(join(root, 'report.txt'), 'utf8'), 'next');
+});
+
+test('reports whether a target already exists', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'taken.txt'), 'x');
+  await mkdir(join(root, 'folder'));
+  const { stat, dispose } = await mount(root);
+  t.after(dispose);
+
+  const check = (dir, name) => stat(new Request(
+    `http://localhost/api/workspace-upload/stat?sessionId=session-1&dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}`,
+  ));
+  assert.deepEqual(await (await check('', 'taken.txt')).json(), { exists: true, kind: 'file' });
+  assert.deepEqual(await (await check('', 'folder')).json(), { exists: true, kind: 'directory' });
+  assert.deepEqual(await (await check('', 'absent.txt')).json(), { exists: false, kind: 'absent' });
+  assert.deepEqual(await (await check('folder', 'taken.txt')).json(), { exists: false, kind: 'absent' });
+  assert.equal((await check('..', 'x')).status, 400);
+  assert.equal((await check('missing', 'x')).status, 404);
+});
+
+test('lists child directories for navigation', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'wu-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'docs'));
+  await mkdir(join(root, 'src'));
+  await writeFile(join(root, 'file.txt'), 'x');
+  const { dirs, dispose } = await mount(root);
+  t.after(dispose);
+
+  const list = (dir) => dirs(new Request(
+    `http://localhost/api/workspace-upload/dirs?sessionId=session-1&dir=${encodeURIComponent(dir)}`,
+  ));
+  assert.deepEqual((await (await list('')).json()).dirs, ['docs', 'src']);
+  assert.deepEqual((await (await list('docs')).json()).dirs, []);
+  assert.equal((await list('missing')).status, 404);
+  assert.equal((await list('..')).status, 400);
 });
 
 test('writes into a contained subdirectory and still refuses escapes', async (t) => {
@@ -209,10 +275,10 @@ test('falls back to the live session store when session query is unavailable', a
 });
 
 test('normalizes settings', () => {
-  assert.deepEqual(readSettings(undefined), { maxUploadBytes: 500 * 1024 * 1024, onConflict: 'rename' });
+  assert.deepEqual(readSettings(undefined), { maxUploadBytes: 500 * 1024 * 1024, onConflict: 'ask' });
   assert.deepEqual(readSettings({ maxUploadBytes: 10, onConflict: 'overwrite' }), { maxUploadBytes: 10, onConflict: 'overwrite' });
   assert.equal(readSettings({ maxUploadBytes: -1 }).maxUploadBytes, 500 * 1024 * 1024);
-  assert.equal(readSettings({ onConflict: 'sideways' }).onConflict, 'rename');
+  assert.equal(readSettings({ onConflict: 'sideways' }).onConflict, 'ask');
 });
 
 test('reports the accepted file size to the browser', async (t) => {
@@ -223,7 +289,7 @@ test('reports the accepted file size to the browser', async (t) => {
 
   const response = await limits(new Request('http://localhost/api/workspace-upload/limits'));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { maxUploadBytes: 12345 });
+  assert.deepEqual(await response.json(), { maxUploadBytes: 12345, onConflict: 'ask' });
 });
 test('accepts an empty file and publishes a zero-byte entry', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'wu-test-'));

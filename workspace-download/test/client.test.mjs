@@ -39,6 +39,8 @@ async function loadClient() {
       },
       addEventListener: () => {},
       removeEventListener: () => {},
+      innerWidth: 1440,
+      innerHeight: 900,
     },
     document,
     console,
@@ -54,6 +56,7 @@ async function loadClient() {
   assert.equal(loaded[0].id, '@local/workspace-download');
   const plugin = loaded[0].factory((name) => {
     if (name === 'react') return React;
+    if (name === 'react-dom') return { createPortal: (element) => element };
     throw new Error(`unexpected require(${name})`);
   });
   const ctx = {
@@ -105,11 +108,13 @@ test('registers a directory menu action and two header controls', async () => {
   assert.equal(menu.contribution.target, 'directory');
   assert.equal(menu.contribution.order, 150);
   const actions = menu.contribution.resolve({ sessionId: 's', path: '/w/docs' }, new AbortController().signal);
-  assert.equal(actions.length, 1);
-  assert.equal(actions[0].id, 'downloadZip');
+  assert.deepEqual([...actions].map((action) => action.id), ['downloadZip', 'downloadZipWithGit']);
   assert.equal(actions[0].label, 'workspaceDownload:zip');
-  assert.equal(actions[0].icon.key, 'workspace-download.zip');
-  assert.equal(typeof actions[0].run, 'function');
+  assert.equal(actions[1].label, 'workspaceDownload:zipWithGit');
+  for (const action of actions) {
+    assert.equal(action.icon.key, 'workspace-download.zip');
+    assert.equal(typeof action.run, 'function');
+  }
 
   const regs = registrations.filter((entry) => entry.kind === 'register');
   assert.ok(regs.some((entry) => entry.options.name === 'contextMenu.icon' && entry.options.key === 'workspace-download.zip'));
@@ -176,6 +181,20 @@ test('reads the Host code from a HEAD header and falls back by status', async ()
   assert.equal((await internals.failureOf(new Response(null, { status: 503 }))).code, 'session-unavailable');
   const coded = await internals.failureOf(new Response(JSON.stringify({ code: 'path-outside-workspace' }), { status: 403 }));
   assert.equal(coded.code, 'path-outside-workspace');
+});
+
+test('places the ZIP menu next to its control', async () => {
+  const { internals } = await loadClient();
+  const below = internals.menuPositionOf({
+    getBoundingClientRect: () => ({ top: 100, bottom: 128, left: 1000, right: 1028, width: 28, height: 28 }),
+  });
+  assert.equal(below.top, 134);
+  assert.equal(below.width, 320);
+  assert.equal(below.left, 708);
+  assert.equal(internals.menuPositionOf({
+    getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
+  }), null);
+  assert.equal(internals.menuPositionOf(null), null);
 });
 
 test('maps every Host failure code to localized copy', async () => {

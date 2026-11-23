@@ -16,6 +16,7 @@ window.__ModuleLoader__.load({
   id: '@local/workspace-download',
   factory(require) {
     const React = require('react');
+    const ReactDOM = require('react-dom');
     const h = React.createElement;
 
     /** Dictionary namespace owned by this plugin. */
@@ -30,10 +31,16 @@ window.__ModuleLoader__.load({
     const EN = {
       file: 'Download this file',
       workspace: 'Download the whole workspace as a ZIP',
-      zip: 'Download as ZIP',
+      zip: 'Download as ZIP (without .git)',
+      zipWithGit: 'Download as ZIP (with .git)',
+      menuTitle: 'Download a ZIP',
+      includeGit: 'Include the .git folder',
+      menuNote: 'node_modules is not included; the archive stops at {entries} entries or {size}.',
+      menuNotePlain: 'node_modules is not included.',
+      download: 'Download',
+      cancel: 'Cancel',
+      preparing: 'Preparing download…',
       started: 'Download started',
-      confirmWorkspace: 'Archive the whole workspace? .git and node_modules are left out. The archive stops at {entries} entries or {size}.',
-      confirmWorkspacePlain: 'Archive the whole workspace? .git and node_modules are left out.',
       errorFailed: 'The download failed; the Host reported an internal error',
       errorTooLarge: 'This folder is larger than the archive limit',
       errorTooLargeLimit: 'This folder is larger than the {size} archive limit',
@@ -53,10 +60,16 @@ window.__ModuleLoader__.load({
     const ZH = {
       file: '下载此文件',
       workspace: '把整个工作区下载为 ZIP',
-      zip: '下载为 ZIP',
+      zip: '下载为 ZIP（不含 .git）',
+      zipWithGit: '下载为 ZIP（含 .git）',
+      menuTitle: '下载 ZIP',
+      includeGit: '包含 .git 目录',
+      menuNote: '不含 node_modules；最多 {entries} 项或 {size}。',
+      menuNotePlain: '不含 node_modules。',
+      download: '下载',
+      cancel: '取消',
+      preparing: '正在准备下载…',
       started: '已开始下载',
-      confirmWorkspace: '要打包整个工作区吗？.git 与 node_modules 会被排除，最多 {entries} 项或 {size}。',
-      confirmWorkspacePlain: '要打包整个工作区吗？.git 与 node_modules 会被排除。',
       errorFailed: '下载失败，服务器内部错误',
       errorTooLarge: '这个文件夹超过打包大小上限',
       errorTooLargeLimit: '这个文件夹超过 {size} 的打包上限',
@@ -81,6 +94,14 @@ window.__ModuleLoader__.load({
 .wd-button:disabled{opacity:.45;cursor:default}
 .wd-button svg{display:block;width:15px;height:15px}
 .wd-spinner{display:block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:wd-spin .8s linear infinite}
+.wd-menu{position:fixed;z-index:1002;box-sizing:border-box;display:flex;flex-direction:column;gap:8px;padding:11px 13px 12px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:var(--dsw-elevation-prominent,0 16px 42px rgba(0,0,0,.34));outline:none;overflow:auto;font-size:var(--dsh-content-font-size-secondary,13px);line-height:1.5}
+.wd-menu-title{margin:0;font-size:13px;font-weight:600;line-height:1.45}
+.wd-menu-check{display:flex;align-items:center;gap:6px;color:var(--dsw-alias-label-primary);font-size:12px;line-height:1.45;cursor:pointer}
+.wd-menu-note{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.45}
+.wd-menu-actions{display:flex;justify-content:flex-end;gap:6px}
+.wd-menu-primary{appearance:none;padding:4px 12px;border:1px solid var(--dsw-alias-brand-primary);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;line-height:1.45}
+.wd-menu-secondary{appearance:none;padding:4px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer;font-family:inherit;font-size:12px;line-height:1.45}
+.wd-menu-primary:focus-visible,.wd-menu-secondary:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));outline-offset:1px}
 @keyframes wd-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.wd-spinner{animation:none;border-right-color:currentColor;opacity:.55}}
 `;
@@ -181,6 +202,35 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Place the workspace ZIP menu under its control, or above it when short.
+     * @param {HTMLElement | null} anchor - the control that owns the menu.
+     * @returns {{ top?: number, bottom?: number, left: number, width: number, maxHeight: number } | null} fixed style.
+     */
+    function menuPositionOf(anchor) {
+      if (anchor === null) return null;
+      const rect = anchor.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return null;
+      const width = Math.min(320, Math.max(240, window.innerWidth - 16));
+      const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+      const below = window.innerHeight - rect.bottom - 14;
+      const above = rect.top - 14;
+      if (below >= 180 || below >= above) {
+        return {
+          top: Math.round(rect.bottom + 6),
+          left: Math.round(left),
+          width,
+          maxHeight: Math.max(150, Math.min(320, below)),
+        };
+      }
+      return {
+        bottom: Math.round(window.innerHeight - rect.top + 6),
+        left: Math.round(left),
+        width,
+        maxHeight: Math.max(150, Math.min(320, above)),
+      };
+    }
+
+    /**
      * Build one route URL for a download.
      * @param {string} route - browser-relative route path.
      * @param {string} sessionId - Session the file belongs to.
@@ -230,11 +280,13 @@ window.__ModuleLoader__.load({
      * @param {string} sessionId - Session the path belongs to.
      * @param {string} path - absolute Host path.
      * @param {boolean} zip - archive a directory instead of streaming one file.
+     * @param {boolean} includeGit - include the folder's .git directory in the archive.
      * @returns {Promise<void>} resolves once the browser owns the transfer.
      * @throws {DownloadFailure} when the Host refuses the download.
      */
-    async function startDownload(sessionId, path, zip) {
+    async function startDownload(sessionId, path, zip, includeGit) {
       const url = downloadUrl(zip ? ZIP_ROUTE : FILE_ROUTE, sessionId, path);
+      if (zip && includeGit) url.searchParams.set('git', '1');
       const controller = new AbortController();
       // Chrome allows a programmatic download only while the click's activation
       // lasts; a slow archive preflight must not spend that window, so a late
@@ -317,38 +369,137 @@ window.__ModuleLoader__.load({
     function DownloadControl(props) {
       const { t, sessionId, absolutePath, zip, notify } = props;
       const [busy, setBusy] = React.useState(false);
+      const [menuOpen, setMenuOpen] = React.useState(false);
+      const [includeGit, setIncludeGit] = React.useState(false);
+      const [menuStyle, setMenuStyle] = React.useState(null);
+      const anchorRef = React.useRef(null);
+      const menuRef = React.useRef(null);
+      const downloadRef = React.useRef(null);
       const label = t(zip ? 'workspace' : 'file');
-      const click = () => {
-        if (busy) return;
-        if (zip) {
-          const confirmed = archiveLimits === null
-            ? t('confirmWorkspacePlain')
-            : t('confirmWorkspace', { entries: archiveLimits.maxEntries, size: formatBytes(archiveLimits.maxTotalBytes) });
-          if (!window.confirm(confirmed)) return;
-        }
+
+      const run = (withGit) => {
         setBusy(true);
-        startDownload(sessionId, absolutePath, zip)
+        startDownload(sessionId, absolutePath, zip, withGit)
           .then(() => { if (typeof notify === 'function') notify(t('started'), true); })
           .catch((error) => { if (typeof notify === 'function') notify(failureText(error, t), false); })
           .finally(() => setBusy(false));
       };
+
+      const click = () => {
+        if (busy) return;
+        if (!zip) {
+          run(false);
+          return;
+        }
+        setMenuOpen((value) => {
+          if (value) return false;
+          setMenuStyle(menuPositionOf(anchorRef.current));
+          return true;
+        });
+      };
+
+      // The menu is fixed-position: follow the control and close on Escape or
+      // a click elsewhere, like the host's own popups.
+      React.useEffect(() => {
+        if (!menuOpen) return undefined;
+        const update = () => setMenuStyle(menuPositionOf(anchorRef.current));
+        update();
+        downloadRef.current?.focus({ preventScroll: true });
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') return;
+          event.preventDefault();
+          setMenuOpen(false);
+        };
+        const onPointerDown = (event) => {
+          if (menuRef.current !== null && menuRef.current.contains(event.target)) return;
+          if (anchorRef.current !== null && anchorRef.current.contains(event.target)) return;
+          setMenuOpen(false);
+        };
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update, true);
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('pointerdown', onPointerDown, true);
+        return () => {
+          window.removeEventListener('resize', update);
+          window.removeEventListener('scroll', update, true);
+          document.removeEventListener('keydown', onKeyDown);
+          document.removeEventListener('pointerdown', onPointerDown, true);
+        };
+      }, [menuOpen]);
+
+      const menu = menuOpen && menuStyle !== null
+        ? ReactDOM.createPortal(
+          h(
+            'div',
+            {
+              ref: menuRef,
+              className: 'wd-menu',
+              role: 'dialog',
+              'aria-label': t('menuTitle'),
+              style: menuStyle,
+            },
+            h('p', { className: 'wd-menu-title' }, t('menuTitle')),
+            h(
+              'label',
+              { className: 'wd-menu-check' },
+              h('input', {
+                type: 'checkbox',
+                checked: includeGit,
+                onChange: (event) => setIncludeGit(event.target.checked),
+              }),
+              h('span', null, t('includeGit')),
+            ),
+            h(
+              'p',
+              { className: 'wd-menu-note' },
+              archiveLimits === null
+                ? t('menuNotePlain')
+                : t('menuNote', { entries: archiveLimits.maxEntries, size: formatBytes(archiveLimits.maxTotalBytes) }),
+            ),
+            h(
+              'div',
+              { className: 'wd-menu-actions' },
+              h('button', {
+                ref: downloadRef,
+                type: 'button',
+                className: 'wd-menu-primary',
+                onClick: () => {
+                  setMenuOpen(false);
+                  run(includeGit);
+                },
+              }, t('download')),
+              h('button', {
+                type: 'button',
+                className: 'wd-menu-secondary',
+                onClick: () => setMenuOpen(false),
+              }, t('cancel')),
+            ),
+          ),
+          document.body,
+        )
+        : null;
+
       return h(
         'div',
         { className: 'wd-root' },
         h(
           'button',
           {
+            ref: anchorRef,
             type: 'button',
             className: 'wd-button',
-            'aria-label': label,
-            title: label,
+            'aria-label': busy ? t('preparing') : label,
+            title: busy ? t('preparing') : label,
             'aria-busy': busy ? 'true' : undefined,
+            'aria-haspopup': zip ? 'dialog' : undefined,
+            'aria-expanded': zip ? menuOpen : undefined,
             disabled: busy,
             'data-workspace-download': 'trigger',
             onClick: click,
           },
           busy ? h('span', { className: 'wd-spinner', 'aria-hidden': 'true' }) : h(IconDownload),
         ),
+        menu,
       );
     }
 
@@ -374,7 +525,7 @@ window.__ModuleLoader__.load({
       inject: ['contextMenus', 'slots', 'locale'],
 
       // Pure helpers exposed for this plugin's own tests; not a client contract.
-      __internals: { DownloadFailure, failureOf, failureText, downloadUrl },
+      __internals: { DownloadFailure, downloadUrl, failureOf, failureText, menuPositionOf },
 
       /**
        * Register dictionaries, styles, the context menu action, and the controls.
@@ -420,21 +571,30 @@ window.__ModuleLoader__.load({
           target: 'directory',
           order: 150,
           resolve: (target) => {
-            const label = t('zip');
-            return [{
-              id: 'downloadZip',
-              label,
-              icon: { key: 'workspace-download.zip' },
-              failureLabel: t('errorFailed'),
-              run: async () => {
-                try {
-                  await startDownload(target.sessionId, target.path, true);
-                  ctx.contextMenus.notify(t('started'), true);
-                } catch (error) {
-                  ctx.contextMenus.notify(failureText(error, t), false);
-                }
+            const run = (includeGit) => async () => {
+              try {
+                await startDownload(target.sessionId, target.path, true, includeGit);
+                ctx.contextMenus.notify(t('started'), true);
+              } catch (error) {
+                ctx.contextMenus.notify(failureText(error, t), false);
+              }
+            };
+            return [
+              {
+                id: 'downloadZip',
+                label: t('zip'),
+                icon: { key: 'workspace-download.zip' },
+                failureLabel: t('errorFailed'),
+                run: run(false),
               },
-            }];
+              {
+                id: 'downloadZipWithGit',
+                label: t('zipWithGit'),
+                icon: { key: 'workspace-download.zip' },
+                failureLabel: t('errorFailed'),
+                run: run(true),
+              },
+            ];
           },
         }), 'workspace-download: directory menu');
 

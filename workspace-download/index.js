@@ -39,7 +39,10 @@ const DEFAULT_MAX_ENTRIES = 20000;
 const DEFAULT_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 
 /** Directory names left out of a workspace archive by default. */
-const DEFAULT_EXCLUDE = ['.git', 'node_modules'];
+const DEFAULT_EXCLUDE = ['node_modules'];
+
+/** Directory the browser may add to the archive on request. */
+const OPTIONAL_EXCLUDE = '.git';
 
 const LOCAL_SIGNATURE = 0x04034b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
@@ -213,9 +216,16 @@ async function zipRoute(ctx, settings, request) {
   }
   if (!target.isDirectory()) return failure(request, 403, 'not-a-directory', 'the path is not a directory');
 
+  // The request chooses whether the repository metadata is included; the row's
+  // exclude list still governs everything else (node_modules by default).
+  const includeGit = params.get('git') === '1';
+  const exclude = settings.exclude.filter((name) => name !== OPTIONAL_EXCLUDE);
+  if (!includeGit) exclude.push(OPTIONAL_EXCLUDE);
+  const archiveSettings = { ...settings, exclude };
+
   let archive;
   try {
-    archive = await collectArchive(canonical, settings);
+    archive = await collectArchive(canonical, archiveSettings);
   } catch (error) {
     if (error instanceof DownloadError) return failure(request, error.status, error.code, error.message);
     return failure(request, 500, 'archive-failed', messageOf(error));

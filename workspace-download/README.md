@@ -6,7 +6,7 @@ Download files and folders from the DSH execution device to the computer running
 - **Files page header**: save the whole workspace as one ZIP.
 - **Folder right-click menu**: **Download as ZIP** for any folder in the tree.
 
-The Host streams each response, so the browser's download manager owns progress, cancellation, and the destination. Each entry asks the Host with `HEAD` first (bounded to 1.5 s so the click's activation is not lost), and a refusal answered in time appears as a page notice; a transfer refused later shows as a failed browser download. Archives are UTF-8 ZIPs with entries stored (not compressed), skipping symlinks and `.git`/`node_modules` by default, capped at 20,000 entries / 2 GiB (and classic-ZIP limits). The whole-workspace control asks for confirmation first.
+The Host streams each response, so the browser's download manager owns progress, cancellation, and the destination. Each entry asks the Host with `HEAD` first (bounded to 1.5 s so the click's activation is not lost), and a refusal answered in time appears as a page notice; a transfer refused later shows as a failed browser download. Archives are UTF-8 ZIPs with entries stored (not compressed), skipping symlinks and `node_modules` by default, and leaving `.git` out unless the download asks for it (the Files header menu has an Include .git checkbox; the folder menu offers both variants). Archives are capped at 20,000 entries / 2 GiB (and classic-ZIP limits).
 
 See [docs/DETAIL.md](docs/DETAIL.md) for behavior, limits, and configuration.
 

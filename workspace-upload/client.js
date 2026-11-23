@@ -25,6 +25,10 @@ window.__ModuleLoader__.load({
     const LIMITS_ROUTE = 'api/workspace-upload/limits';
     /** Browser-relative Host route creating one workspace-relative directory. */
     const DIR_ROUTE = 'api/workspace-upload/dir';
+    /** Browser-relative Host route reporting whether a target file exists. */
+    const STAT_ROUTE = 'api/workspace-upload/stat';
+    /** Browser-relative Host route listing child directories. */
+    const DIRS_ROUTE = 'api/workspace-upload/dirs';
     /** Width of the progress panel. */
     const PANEL_WIDTH = 360;
     /** Distance between the control and its panel. */
@@ -50,6 +54,17 @@ window.__ModuleLoader__.load({
       hide: 'Hide',
       target: 'Saving to',
       limit: 'Up to {size} per file',
+      root: 'Workspace root',
+      up: 'Up one level',
+      dirsEmpty: 'No subfolders',
+      dirsLoading: 'Reading folders…',
+      dirsError: 'Could not read the folder list',
+      conflictTitle: 'File already exists',
+      conflictMessage: '{name} already exists. Replace it or cancel this file?',
+      conflictApplyRest: 'Use this choice for the remaining conflicts',
+      replace: 'Replace',
+      skip: 'Cancel',
+      statusSkipped: 'Skipped (a file with that name exists)',
       cancel: 'Cancel uploads',
       summaryBusy: 'Uploading {done} of {total}…',
       summaryDone: '{count} files uploaded',
@@ -58,6 +73,8 @@ window.__ModuleLoader__.load({
       summaryFailedOne: '1 file failed',
       summaryCancelled: '{done} uploaded, {cancelled} cancelled',
       summaryCancelledOne: '1 upload cancelled',
+      summarySkipped: '{done} uploaded, {skipped} skipped',
+      summarySkippedOne: '1 upload skipped',
       statusQueued: 'Waiting',
       statusUploading: '{percent}%',
       statusSaving: 'Saving to the workspace…',
@@ -98,6 +115,17 @@ window.__ModuleLoader__.load({
       hide: '隐藏',
       target: '保存到',
       limit: '单个文件最大 {size}',
+      root: '工作区根目录',
+      up: '上一级',
+      dirsEmpty: '没有子文件夹',
+      dirsLoading: '正在读取文件夹…',
+      dirsError: '无法读取文件夹列表',
+      conflictTitle: '同名文件已存在',
+      conflictMessage: '{name} 已存在，要替换它还是取消这个文件？',
+      conflictApplyRest: '本次上传中其余冲突也这样处理',
+      replace: '替换',
+      skip: '取消',
+      statusSkipped: '已跳过（同名文件已存在）',
       cancel: '取消上传',
       summaryBusy: '正在上传第 {done} / {total} 个…',
       summaryDone: '已上传 {count} 个文件',
@@ -106,6 +134,8 @@ window.__ModuleLoader__.load({
       summaryFailedOne: '1 个文件上传失败',
       summaryCancelled: '已上传 {done} 个，取消 {cancelled} 个',
       summaryCancelledOne: '已取消 1 个上传',
+      summarySkipped: '已上传 {done} 个，跳过 {skipped} 个',
+      summarySkippedOne: '已跳过 1 个上传',
       statusQueued: '等待上传',
       statusUploading: '{percent}%',
       statusSaving: '正在保存到工作区…',
@@ -177,6 +207,31 @@ window.__ModuleLoader__.load({
 @media (hover:hover){.wu-start-button:hover{background:var(--dsw-alias-interactive-bg-hover)}}
 .wu-start-button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));outline-offset:1px}
 .wu-start-hint{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.45}
+.wu-nav{flex:none;display:flex;flex-direction:column;gap:6px;padding:8px 13px 9px;border-bottom:0.5px solid var(--dsw-alias-border-l1)}
+.wu-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:1px;min-width:0}
+.wu-crumb{appearance:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:1px 4px;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-family:inherit;font-size:12px;line-height:1.45}
+@media (hover:hover){.wu-crumb:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}}
+.wu-crumb[data-current="true"]{color:var(--dsw-alias-label-primary);font-weight:600}
+.wu-crumb:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));outline-offset:1px}
+.wu-crumb-seg{display:inline-flex;align-items:center;min-width:0}
+.wu-crumb-sep{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.45}
+.wu-nav-up{appearance:none;display:inline-flex;flex:none;align-items:center;justify-content:center;margin-left:auto;width:22px;height:22px;padding:0;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer;font-family:inherit;font-size:12px;line-height:1}
+@media (hover:hover){.wu-nav-up:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}}
+.wu-nav-up:disabled{opacity:.4;cursor:default}
+.wu-nav-up:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));outline-offset:1px}
+.wu-dirs{display:flex;flex-wrap:wrap;gap:4px;max-height:84px;overflow:auto;overscroll-behavior:contain}
+.wu-dir{appearance:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 7px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);cursor:pointer;font-family:inherit;font-size:12px;line-height:1.45}
+@media (hover:hover){.wu-dir:hover{background:var(--dsw-alias-interactive-bg-hover)}}
+.wu-dir:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));outline-offset:1px}
+.wu-dirs-note{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.45}
+.wu-conflict{flex:none;display:flex;flex-direction:column;gap:7px;padding:10px 13px 12px;border-bottom:0.5px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+.wu-conflict-title{margin:0;color:var(--dsw-alias-label-primary);font-size:12.5px;font-weight:600;line-height:1.45}
+.wu-conflict-text{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.wu-conflict-apply{display:flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.45;cursor:pointer}
+.wu-conflict-actions{display:flex;justify-content:flex-end;gap:6px}
+.wu-conflict-primary{appearance:none;padding:4px 12px;border:1px solid var(--dsw-alias-brand-primary);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;line-height:1.45}
+.wu-conflict-secondary{appearance:none;padding:4px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer;font-family:inherit;font-size:12px;line-height:1.45}
+.wu-conflict-primary:focus-visible,.wu-conflict-secondary:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));outline-offset:1px}
 .wu-drop{position:fixed;z-index:1001;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border:2px dashed var(--dsw-alias-brand-primary);border-radius:var(--dsw-radius-lg,12px);background:transparent;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 7%,transparent);pointer-events:none}
 .wu-drop-hint{padding:8px 14px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:var(--dsw-elevation-prominent,0 8px 24px rgba(0,0,0,.24));font-size:13px;line-height:1.45}
 @keyframes wu-pulse{0%,100%{opacity:.45}50%{opacity:1}}
@@ -261,11 +316,12 @@ window.__ModuleLoader__.load({
      * @param {string} name - the name to publish, which may be a fallback for an unnamed file.
      * @param {string} sessionId - Session whose workspace receives the file.
      * @param {string} dir - workspace-relative destination directory, empty for the root.
+     * @param {boolean} overwrite - replace an existing file instead of refusing the name.
      * @param {{ progress: (fraction: number) => void, saving: () => void, track: (xhr: XMLHttpRequest | null) => void }} hooks -
      *   upload progress, the Host receiving the last byte, and the live request for cancellation.
      * @returns {Promise<object>} the stored value, or a failure with `code` and technical `detail`.
      */
-    function sendOne(file, name, sessionId, dir, hooks) {
+    function sendOne(file, name, sessionId, dir, overwrite, hooks) {
       return new Promise((resolve) => {
         let settled = false;
         const settle = (value) => {
@@ -278,6 +334,7 @@ window.__ModuleLoader__.load({
         url.searchParams.set('sessionId', sessionId);
         url.searchParams.set('name', name);
         if (dir !== '') url.searchParams.set('dir', dir);
+        if (overwrite) url.searchParams.set('overwrite', '1');
         const xhr = new XMLHttpRequest();
         hooks.track(xhr);
         xhr.open('POST', url.href);
@@ -375,6 +432,8 @@ window.__ModuleLoader__.load({
           return t('statusDone');
         case 'cancelled':
           return t('statusCancelled');
+        case 'skipped':
+          return t('statusSkipped');
         default:
           return errorText(item, t);
       }
@@ -450,6 +509,45 @@ window.__ModuleLoader__.load({
       const index = normalized.lastIndexOf('/');
       if (index < 0) return { dir: '', name: normalized };
       return { dir: normalized.slice(0, index), name: normalized.slice(index + 1) };
+    }
+
+    /**
+     * Join one relative directory with a child name or path.
+     * @param {string} base - normalized base directory.
+     * @param {string} child - child directory or path.
+     * @returns {string} the normalized joined path.
+     */
+    function joinRelative(base, child) {
+      const left = normalizeRelative(base);
+      const right = normalizeRelative(child);
+      if (left === '') return right;
+      if (right === '') return left;
+      return `${left}/${right}`;
+    }
+
+    /**
+     * The parent of one relative directory.
+     * @param {string} directory - normalized relative directory.
+     * @returns {string} its parent, empty at the workspace root.
+     */
+    function parentRelative(directory) {
+      const normalized = normalizeRelative(directory);
+      const index = normalized.lastIndexOf('/');
+      return index < 0 ? '' : normalized.slice(0, index);
+    }
+
+    /**
+     * Absolute display path for one workspace-relative directory.
+     * @param {string} root - absolute workspace root as the Host reported it.
+     * @param {string} directory - relative directory.
+     * @returns {string} the display path using the root's separator style.
+     */
+    function displayPath(root, directory) {
+      const normalized = normalizeRelative(directory);
+      const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/';
+      const base = root.endsWith(separator) ? root.slice(0, -separator.length) : root;
+      if (normalized === '') return base === '' ? separator : base;
+      return `${base}${separator}${normalized.split('/').join(separator)}`;
     }
 
     /**
@@ -550,6 +648,41 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Ask whether one target file already exists in the workspace.
+     * @param {string} sessionId - Session whose workspace is checked.
+     * @param {string} directory - workspace-relative directory, empty for the root.
+     * @param {string} name - target file name.
+     * @returns {Promise<string>} `'file'`, `'directory'`, `'symlink'`, `'other'`, or `'absent'`.
+     */
+    async function targetKind(sessionId, directory, name) {
+      const url = new URL(STAT_ROUTE, document.baseURI);
+      url.searchParams.set('sessionId', sessionId);
+      url.searchParams.set('dir', directory);
+      url.searchParams.set('name', name);
+      const response = await fetch(url.href, { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json();
+      if (body !== null && typeof body === 'object' && typeof body.kind === 'string') return body.kind;
+      return body?.exists === true ? 'file' : 'absent';
+    }
+
+    /**
+     * List the child directories of one workspace directory.
+     * @param {string} sessionId - Session whose workspace is listed.
+     * @param {string} directory - workspace-relative directory, empty for the root.
+     * @returns {Promise<string[]>} child directory names.
+     */
+    async function listDirectories(sessionId, directory) {
+      const url = new URL(DIRS_ROUTE, document.baseURI);
+      url.searchParams.set('sessionId', sessionId);
+      url.searchParams.set('dir', directory);
+      const response = await fetch(url.href, { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json();
+      return Array.isArray(body?.dirs) ? body.dirs.filter((name) => typeof name === 'string') : [];
+    }
+
+    /**
      * Create one workspace-relative directory on the Host.
      * @param {string} sessionId - Session whose workspace receives the directory.
      * @param {string} directory - normalized workspace-relative directory.
@@ -590,6 +723,13 @@ window.__ModuleLoader__.load({
       const [open, setOpen] = React.useState(false);
       const [position, setPosition] = React.useState(null);
       const [limit, setLimit] = React.useState(0);
+      const [mode, setMode] = React.useState('ask');
+      const [targetDir, setTargetDir] = React.useState('');
+      const [dirs, setDirs] = React.useState([]);
+      const [dirsLoading, setDirsLoading] = React.useState(false);
+      const [dirsError, setDirsError] = React.useState(false);
+      const [conflict, setConflict] = React.useState(null);
+      const [conflictApplyAll, setConflictApplyAll] = React.useState(false);
       const anchorRef = React.useRef(null);
       const panelRef = React.useRef(null);
       const inputRef = React.useRef(null);
@@ -603,8 +743,19 @@ window.__ModuleLoader__.load({
       if (panelIdRef.current === '') panelIdRef.current = `workspace-upload-${Math.random().toString(36).slice(2, 8)}`;
       const sessionRef = React.useRef(sessionId);
       const limitRef = React.useRef(0);
+      const targetDirRef = React.useRef('');
+      const modeRef = React.useRef('ask');
+      const conflictResolveRef = React.useRef(null);
+      const conflictChoiceRef = React.useRef(null);
+      const conflictApplyAllRef = React.useRef(false);
+      const conflictOpenRef = React.useRef(false);
+      const answerConflictRef = React.useRef(null);
+      const replaceButtonRef = React.useRef(null);
       sessionRef.current = sessionId;
       limitRef.current = limit;
+      targetDirRef.current = targetDir;
+      modeRef.current = mode;
+      conflictOpenRef.current = conflict !== null;
 
       /**
        * Update one listed upload when the component is still mounted.
@@ -636,10 +787,27 @@ window.__ModuleLoader__.load({
             if (body !== null && typeof body === 'object' && Number.isFinite(body.maxUploadBytes) && body.maxUploadBytes > 0) {
               setLimit(body.maxUploadBytes);
             }
+            if (body !== null && typeof body === 'object'
+              && (body.onConflict === 'ask' || body.onConflict === 'rename' || body.onConflict === 'overwrite')) {
+              setMode(body.onConflict);
+            }
           })
           .catch(() => {});
         return () => { cancelled = true; };
       }, []);
+
+      // Keep the folder list of the current destination in step with navigation.
+      React.useEffect(() => {
+        if (!open) return undefined;
+        let cancelled = false;
+        setDirsLoading(true);
+        setDirsError(false);
+        listDirectories(sessionRef.current, targetDir)
+          .then((names) => { if (!cancelled) setDirs(names); })
+          .catch(() => { if (!cancelled) { setDirs([]); setDirsError(true); } })
+          .finally(() => { if (!cancelled) setDirsLoading(false); });
+        return () => { cancelled = true; };
+      }, [open, targetDir]);
 
       /**
        * Hide the panel, which does not stop uploads, and return focus to the control.
@@ -652,6 +820,48 @@ window.__ModuleLoader__.load({
       }, []);
 
       /**
+       * Ask the user whether to replace one existing target.
+       * @param {{ name: string, label: string }} entry - the queued upload.
+       * @returns {Promise<'replace' | 'skip'>} the user's choice.
+       */
+      const askConflict = React.useCallback((entry) => new Promise((resolve) => {
+        conflictResolveRef.current = resolve;
+        setConflict({ name: entry.name, label: entry.label });
+        setConflictApplyAll(false);
+        setOpen(true);
+      }), []);
+
+      /**
+       * Answer the pending conflict and continue the queue.
+       * @param {boolean} replace - true replaces the file, false skips it.
+       */
+      const answerConflict = React.useCallback((replace) => {
+        const resolve = conflictResolveRef.current;
+        conflictResolveRef.current = null;
+        if (conflictApplyAllRef.current) conflictChoiceRef.current = replace ? 'replace' : 'skip';
+        setConflict(null);
+        setConflictApplyAll(false);
+        if (resolve !== null) resolve(replace ? 'replace' : 'skip');
+        window.setTimeout(() => {
+          if (aliveRef.current) panelRef.current?.focus({ preventScroll: true });
+        }, 0);
+      }, []);
+      answerConflictRef.current = answerConflict;
+
+      // Move focus to the replacement choice when a conflict appears.
+      React.useEffect(() => {
+        if (conflict !== null) replaceButtonRef.current?.focus({ preventScroll: true });
+      }, [conflict]);
+
+      /**
+       * Close the panel, answering a pending conflict as "skip" first.
+       */
+      const dismiss = React.useCallback(() => {
+        if (conflictOpenRef.current) answerConflict(false);
+        hide();
+      }, [hide, answerConflict]);
+
+      /**
        * Stream one batch into the workspace, creating the picked folder's shape.
        * @param {{ file: File, relative: string }[]} chosen - files with their relative path.
        * @param {Iterable<string>} [directories] - directories the picker or drop reported, empty ones included.
@@ -661,6 +871,7 @@ window.__ModuleLoader__.load({
         const files = (Array.isArray(chosen) ? chosen : []).filter((item) => item !== null && typeof item === 'object'
           && item.file !== null && typeof item.file === 'object' && typeof item.file.size === 'number');
         const stamp = Date.now().toString(36);
+        const baseDir = normalizeRelative(targetDirRef.current);
         const entries = files.map((item, index) => {
           const relative = normalizeRelative(item.relative ?? (typeof item.file.name === 'string' ? item.file.name : ''));
           const { dir, name } = splitUploadPath(relative);
@@ -668,7 +879,7 @@ window.__ModuleLoader__.load({
             key: `${stamp}-${index}`,
             name: name === '' ? `file-${index + 1}` : name,
             label: relative === '' ? `file-${index + 1}` : relative,
-            dir,
+            dir: joinRelative(baseDir, dir),
             size: item.file.size,
             state: 'queued',
             progress: 0,
@@ -678,19 +889,27 @@ window.__ModuleLoader__.load({
             detail: '',
           };
         });
-        const createDirs = emptyDirectories(entries, directories);
+        const createDirs = emptyDirectories(
+          entries.map((entry) => ({ label: entry.dir === '' ? entry.name : `${entry.dir}/${entry.name}` })),
+          [...(directories ?? [])].map((directory) => joinRelative(baseDir, directory)),
+        );
         if (entries.length === 0 && createDirs.length === 0) return;
         const session = sessionRef.current;
         const accepted = limitRef.current;
+        const mode = modeRef.current;
         busyRef.current = true;
         cancelRef.current = false;
         abortRef.current = null;
+        conflictChoiceRef.current = null;
+        conflictApplyAllRef.current = false;
+        setConflictApplyAll(false);
         setNotice(null);
         setBusy(true);
         setOpen(true);
         setItems(entries);
         let failed = 0;
         let cancelledCount = 0;
+        let skipped = 0;
         let renamed = 0;
         let mkdirFailed = 0;
         // The guard belongs to the transfer, not to this component: a closed tab
@@ -700,6 +919,22 @@ window.__ModuleLoader__.load({
           event.returnValue = '';
         };
         window.addEventListener('beforeunload', guard);
+        const askChoice = async (entry) => {
+          const remembered = conflictChoiceRef.current;
+          if (remembered !== null) return remembered;
+          return await askConflict(entry);
+        };
+        const send = async (entry, file, overwrite) => {
+          try {
+            return await sendOne(file, entry.name, session, entry.dir, overwrite, {
+              progress: (fraction) => patch(entry.key, { progress: fraction }),
+              saving: () => patch(entry.key, { state: 'saving' }),
+              track: (xhr) => { abortRef.current = xhr; },
+            });
+          } catch (error) {
+            return { ok: false, code: 'unknown', detail: error instanceof Error ? error.message : String(error) };
+          }
+        };
         try {
           // Folders that contain no file would otherwise be lost; the rest are
           // created by the Host when each file lands under its relative path.
@@ -729,16 +964,47 @@ window.__ModuleLoader__.load({
               failed += 1;
               continue;
             }
+            // A taken name is the user's decision: ask before replacing, unless
+            // the row is configured to rename or overwrite silently.
+            let overwrite = mode === 'overwrite';
+            if (mode === 'ask') {
+              let kind = null;
+              try {
+                kind = await targetKind(session, entry.dir, entry.name);
+              } catch (error) {
+                kind = null;
+              }
+              if (kind !== null && kind !== 'absent') {
+                if (kind === 'directory' || kind === 'symlink' || kind === 'other') {
+                  patch(entry.key, {
+                    state: 'error',
+                    code: kind === 'directory' ? 'directory-target' : kind === 'symlink' ? 'symlink-target' : 'name-conflict',
+                    detail: '',
+                  });
+                  failed += 1;
+                  continue;
+                }
+                const choice = await askChoice(entry);
+                if (choice === 'skip') {
+                  patch(entry.key, { state: 'skipped' });
+                  skipped += 1;
+                  continue;
+                }
+                overwrite = true;
+              }
+            }
             patch(entry.key, { state: 'uploading', progress: 0 });
-            let result;
-            try {
-              result = await sendOne(file, entry.name, session, entry.dir, {
-                progress: (fraction) => patch(entry.key, { progress: fraction }),
-                saving: () => patch(entry.key, { state: 'saving' }),
-                track: (xhr) => { abortRef.current = xhr; },
-              });
-            } catch (error) {
-              result = { ok: false, code: 'unknown', detail: error instanceof Error ? error.message : String(error) };
+            let result = await send(entry, file, overwrite);
+            if (!result.ok && result.code === 'name-conflict' && mode === 'ask' && !overwrite) {
+              // A file appeared between the check and the upload; ask now.
+              const choice = await askChoice(entry);
+              if (choice === 'skip') {
+                patch(entry.key, { state: 'skipped' });
+                skipped += 1;
+                continue;
+              }
+              patch(entry.key, { state: 'uploading', progress: 0 });
+              result = await send(entry, file, true);
             }
             if (result.ok) {
               const stored = typeof result.value.name === 'string' && result.value.name !== '' ? result.value.name : entry.name;
@@ -762,13 +1028,17 @@ window.__ModuleLoader__.load({
             // batch ends, its rows are dropped and a toast carries the outcome.
             setItems([]);
             setNotice(null);
+            setConflict(null);
+            conflictResolveRef.current = null;
             hide();
             if (typeof notify === 'function') {
-              const uploaded = entries.length - failed - cancelledCount;
+              const uploaded = entries.length - failed - cancelledCount - skipped;
               if (failed > 0) {
                 notify(entries.length === 1 ? t('summaryFailedOne') : t('summaryFailed', { done: uploaded, failed }), false);
               } else if (cancelledCount > 0) {
                 notify(entries.length === 1 ? t('summaryCancelledOne') : t('summaryCancelled', { done: uploaded, cancelled: cancelledCount }), false);
+              } else if (skipped > 0) {
+                notify(entries.length === 1 ? t('summarySkippedOne') : t('summarySkipped', { done: uploaded, skipped }), false);
               } else if (mkdirFailed > 0) {
                 notify(t('errorMkdir'), false);
               } else if (entries.length === 0) {
@@ -781,16 +1051,17 @@ window.__ModuleLoader__.load({
             }
           }
         }
-      }, [patch, hide]);
+      }, [patch, hide, askConflict]);
 
       /**
        * Stop the current file and skip the rest of the queue.
        */
       const cancel = React.useCallback(() => {
+        if (conflictOpenRef.current) answerConflict(false);
         cancelRef.current = true;
         const xhr = abortRef.current;
         if (xhr !== null) xhr.abort();
-      }, []);
+      }, [answerConflict]);
 
       // Follow the control while the panel is open: it is fixed-position, so a
       // resize, a dock split, or a sidebar scroll would otherwise leave it behind.
@@ -813,7 +1084,8 @@ window.__ModuleLoader__.load({
         const onKeyDown = (event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
-            hide();
+            if (conflictOpenRef.current) answerConflictRef.current(false);
+            else hide();
             return;
           }
           if (event.key !== 'Tab' || panelRef.current === null) return;
@@ -833,6 +1105,7 @@ window.__ModuleLoader__.load({
           }
         };
         const onPointerDown = (event) => {
+          if (conflictOpenRef.current) return;
           const target = event.target;
           if (panelRef.current !== null && panelRef.current.contains(target)) return;
           if (anchorRef.current !== null && anchorRef.current.contains(target)) return;
@@ -857,7 +1130,9 @@ window.__ModuleLoader__.load({
       // is still absent, so keyboard users reach its buttons on the first batch.
       const panelMounted = open && position !== null;
       React.useEffect(() => {
-        if (panelMounted) panelRef.current?.focus({ preventScroll: true });
+        if (!panelMounted) return;
+        if (conflictOpenRef.current) replaceButtonRef.current?.focus({ preventScroll: true });
+        else panelRef.current?.focus({ preventScroll: true });
       }, [panelMounted]);
 
       // Files dropped on this Files page are uploads, not attachments and not
@@ -956,7 +1231,8 @@ window.__ModuleLoader__.load({
       const done = items.filter((item) => item.state === 'done').length;
       const failed = items.filter((item) => item.state === 'error').length;
       const cancelledCount = items.filter((item) => item.state === 'cancelled').length;
-      const settled = done + failed + cancelledCount;
+      const skipped = items.filter((item) => item.state === 'skipped').length;
+      const settled = done + failed + cancelledCount + skipped;
       const progressDone = busy ? Math.min(settled + 1, items.length) : settled;
       const badge = busy ? `${progressDone}/${items.length}` : null;
       let summary;
@@ -965,6 +1241,8 @@ window.__ModuleLoader__.load({
         summary = items.length === 1 ? t('summaryFailedOne') : t('summaryFailed', { done, failed });
       } else if (cancelledCount > 0) {
         summary = items.length === 1 ? t('summaryCancelledOne') : t('summaryCancelled', { done, cancelled: cancelledCount });
+      } else if (skipped > 0) {
+        summary = items.length === 1 ? t('summarySkippedOne') : t('summarySkipped', { done, skipped });
       } else {
         summary = items.length === 1 ? t('summaryDoneOne') : t('summaryDone', { count: items.length });
       }
@@ -1045,7 +1323,11 @@ window.__ModuleLoader__.load({
                   'div',
                   { className: 'wu-pop-target' },
                   h('span', null, t('target')),
-                  h('span', { className: 'wu-pop-path', title: absolutePath }, absolutePath),
+                  h(
+                    'span',
+                    { className: 'wu-pop-path', title: displayPath(absolutePath, targetDir) },
+                    displayPath(absolutePath, targetDir),
+                  ),
                 ),
                 limit > 0 ? h('p', { className: 'wu-pop-limit' }, t('limit', { size: formatBytes(limit) })) : null,
               ),
@@ -1056,11 +1338,102 @@ window.__ModuleLoader__.load({
                   className: 'wu-close',
                   'aria-label': t('hide'),
                   title: t('panelClose'),
-                  onClick: hide,
+                  onClick: dismiss,
                 },
                 h(IconClose),
               ),
             ),
+            busy
+              ? null
+              : h(
+                'div',
+                { className: 'wu-nav' },
+                h(
+                  'div',
+                  { className: 'wu-crumbs' },
+                  h('button', {
+                    type: 'button',
+                    className: 'wu-crumb',
+                    'data-current': targetDir === '' ? 'true' : 'false',
+                    onClick: () => setTargetDir(''),
+                  }, t('root')),
+                  ...(normalizeRelative(targetDir) === '' ? [] : normalizeRelative(targetDir).split('/').map((segment, index, all) => {
+                    const path = all.slice(0, index + 1).join('/');
+                    return h(
+                      'span',
+                      { key: path, className: 'wu-crumb-seg' },
+                      h('span', { className: 'wu-crumb-sep', 'aria-hidden': 'true' }, '/'),
+                      h('button', {
+                        type: 'button',
+                        className: 'wu-crumb',
+                        title: path,
+                        onClick: () => setTargetDir(path),
+                      }, segment),
+                    );
+                  })),
+                  h('button', {
+                    type: 'button',
+                    className: 'wu-nav-up',
+                    'aria-label': t('up'),
+                    title: t('up'),
+                    disabled: targetDir === '',
+                    onClick: () => setTargetDir(parentRelative(targetDir)),
+                  }, '\u2191'),
+                ),
+                h(
+                  'div',
+                  { className: 'wu-dirs' },
+                  dirsLoading
+                    ? h('span', { className: 'wu-dirs-note' }, t('dirsLoading'))
+                    : dirsError
+                      ? h('span', { className: 'wu-dirs-note' }, t('dirsError'))
+                      : dirs.length === 0
+                        ? h('span', { className: 'wu-dirs-note' }, t('dirsEmpty'))
+                        : dirs.map((name) => h('button', {
+                          key: name,
+                          type: 'button',
+                          className: 'wu-dir',
+                          title: name,
+                          onClick: () => setTargetDir(joinRelative(targetDir, name)),
+                        }, `${name}/`)),
+                ),
+              ),
+            conflict === null
+              ? null
+              : h(
+                'div',
+                { className: 'wu-conflict', role: 'alertdialog', 'aria-label': t('conflictTitle') },
+                h('p', { className: 'wu-conflict-title' }, t('conflictTitle')),
+                h('p', { className: 'wu-conflict-text' }, t('conflictMessage', { name: conflict.label })),
+                h(
+                  'label',
+                  { className: 'wu-conflict-apply' },
+                  h('input', {
+                    type: 'checkbox',
+                    checked: conflictApplyAll,
+                    onChange: (event) => {
+                      conflictApplyAllRef.current = event.target.checked;
+                      setConflictApplyAll(event.target.checked);
+                    },
+                  }),
+                  h('span', null, t('conflictApplyRest')),
+                ),
+                h(
+                  'div',
+                  { className: 'wu-conflict-actions' },
+                  h('button', {
+                    ref: replaceButtonRef,
+                    type: 'button',
+                    className: 'wu-conflict-primary',
+                    onClick: () => answerConflict(true),
+                  }, t('replace')),
+                  h('button', {
+                    type: 'button',
+                    className: 'wu-conflict-secondary',
+                    onClick: () => answerConflict(false),
+                  }, t('skip')),
+                ),
+              ),
             notice === null ? null : h('p', { className: 'wu-notice' }, t(notice.key, notice.params)),
             scanning ? h('p', { className: 'wu-notice' }, t('scanning')) : null,
             !busy && !scanning
@@ -1131,7 +1504,7 @@ window.__ModuleLoader__.load({
                   : null,
                 busy
                   ? h('button', { type: 'button', className: 'wu-foot-button', onClick: cancel }, t('cancel'))
-                  : h('button', { type: 'button', className: 'wu-foot-button', onClick: hide }, t('hide')),
+                  : h('button', { type: 'button', className: 'wu-foot-button', onClick: dismiss }, t('hide')),
               ),
           ),
           document.body,
@@ -1165,7 +1538,20 @@ window.__ModuleLoader__.load({
       inject: ['contextMenus', 'slots', 'locale'],
 
       // Pure helpers exposed for this plugin's own tests; not a client contract.
-      __internals: { formatBytes, collectDropped, emptyDirectories, normalizeRelative, panelPosition, samePosition, splitUploadPath, statusText, errorText },
+      __internals: {
+        collectDropped,
+        displayPath,
+        emptyDirectories,
+        errorText,
+        formatBytes,
+        joinRelative,
+        normalizeRelative,
+        panelPosition,
+        parentRelative,
+        samePosition,
+        splitUploadPath,
+        statusText,
+      },
 
       /**
        * Register the dictionaries, the styles, and the Files header entry.

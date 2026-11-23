@@ -2,7 +2,7 @@
 
 Upload files from the browser into a Session's workspace from the **Files** page header.
 
-- One upload control in the right Sidebar's Files page header: pick files or a whole folder, or drop either anywhere on the Files page; a folder keeps its directory structure.
+- One upload control in the right Sidebar's Files page header: navigate into a workspace subfolder, then pick files or a whole folder, or drop either anywhere on the Files page; a folder keeps its directory structure. An existing name asks **Replace / Cancel** (configurable to rename or overwrite).
 - Each file streams to the Host as a hidden temporary file and is then published, so the tree never shows a partial upload.
 - Per-file progress, a saving phase, outcomes, and failures in a small panel; **Cancel uploads** stops the current file and the rest of the queue, while **Hide** keeps uploads running. When the batch ends the panel clears itself and a toast reports the outcome — no history or log file is kept.
 - Name-safe publishing (`name (1).ext`), a size cap shown in the panel (default 500 MiB, below a typical 512 MiB proxy cap), and a destination fenced inside the Session's working directory.

@@ -6,7 +6,8 @@ Upload files from the computer running the browser into the Session's workspace 
 
 Open a conversation, then open the right Sidebar's **Files** page (the folder icon; `Ctrl/⌘+Alt+P` in Web, `Mod+P` in Desktop). An upload control sits in the page header beside the reload and search buttons.
 
-- Click it to open the upload panel, then choose **files** or a **folder** from the local computer.
+- Click it to open the upload panel, then choose **files** or a **folder** from the local computer. The panel starts at the workspace root and lists its subfolders; click one to go in, use the breadcrumb or **↑** to go back out, and uploads land in the folder shown at the top. Navigation is frozen while a batch runs.
+- A file whose name already exists in the destination asks **Replace / Cancel** before anything is sent (see below).
 - Or drop files or a whole folder anywhere on the Files page — the page highlights as a drop target — to upload them. A drop there is claimed for the workspace, so the same files are not also attached to the open conversation.
 - While a batch is running, click the control (its badge shows `n/total`) to show or hide the progress panel.
 
@@ -19,18 +20,29 @@ Each file is streamed to the Host, written to a hidden temporary file inside the
 The progress panel lists every chosen file with its size, a progress bar while its bytes are sending, `Saving to the workspace…` while the Host finalizes the file, and the outcome:
 
 - **Uploaded** — the file is in the workspace under the name shown.
-- **Uploaded as …** — the name was already taken and a free alternative was used.
-- **Replaced the existing file** — `onConflict: overwrite` is set and an earlier file of that name was replaced.
+- **Uploaded as …** — the name was already taken and a free alternative was used (`onConflict: rename`).
+- **Replaced the existing file** — the existing file was replaced.
+- **Skipped** — a taken name was cancelled in the conflict prompt, so that file was not sent.
 - **A failure line** — the reason, such as the size limit, a rejected request, or a Session without a readable directory. Hovering the line shows the Host's technical message when there is one.
 
 Uploads run one file at a time. **Cancel uploads** stops the current file and skips the rest of the queue. The panel's close button and **Hide** only hide it: uploads keep running, and the badge keeps counting.
 
 The panel is a live progress view, not a history. As soon as the batch ends, its rows are cleared, the panel closes, and a short toast reports the outcome — uploaded, some renamed or replaced, failed, cancelled, or created empty folders. Reopening the panel shows only the two start actions. Nothing is retained in the page, nothing is written to a log file, and the Host's hidden `.dsh-upload-*.part` staging file is removed on failure or replaced by the published file. Closing the Files tab does not stop a running upload, but its progress panel goes away; the page asks for confirmation before unloading while a transfer is in flight.
 
+## Conflict handling
+
+The plugin row's `onConflict` decides what happens when the target name already exists:
+
+- `ask` (default) — the panel shows **File already exists** with the relative name and two buttons: **Replace** sends that file again and replaces the existing one, **Cancel** skips that file and continues the rest of the batch. A checkbox applies the same choice to every remaining conflict in the batch. Nothing is sent before the choice, so a large file is not uploaded twice.
+- `rename` — a free alternative such as `name (1).ext` is used without asking.
+- `overwrite` — the existing file is replaced without asking.
+
+A race (a file appears after the check) still ends in the same prompt. A name that belongs to a folder, or to a symbolic link, cannot be replaced: the row reports the reason instead.
+
 ## Destination and limits
 
 - The destination is the Session's effective working directory, read by the Host from the Session itself. The panel shows that path above the list.
-- Files land directly in that directory, and an uploaded folder becomes a subdirectory below it. Expanding a folder in the tree does not change the destination.
+- Files land in the destination folder shown in the panel, and an uploaded folder becomes a subdirectory there. The tree's currently expanded folder does not change the destination; use the panel's navigation for that.
 - Folders merge with what is already in the workspace: missing directories are created, existing files follow the name rule below, and empty folders found in a **dropped** folder are created too (the browser's folder picker does not report empty subdirectories).
 - The default limit is 500 MiB per file. The panel states it once the Host has answered the limits request, and a larger file is then refused before anything is sent; if that request never answers, the Host still refuses an oversized file after the bytes arrive. The default leaves room under a 512 MiB reverse-proxy request cap — a proxy that caps bodies lower answers its own 413, which the panel reports as the size limit. `maxUploadBytes` in the plugin row changes the Host limit and what the panel shows.
 - Names are published create-if-absent: a taken name becomes `name (1).ext`. Set `onConflict: overwrite` in the plugin row to replace an existing file instead.
@@ -44,12 +56,12 @@ The panel is a live progress view, not a history. As soon as the batch ends, its
   name: '@local/workspace-upload'
   config:
     maxUploadBytes: 524288000 # bytes accepted per file; keep it below the proxy cap
-    onConflict: rename # or overwrite
+    onConflict: ask # ask | rename | overwrite
 ```
 
 ## Not included
 
 - No agent tool: choosing local files is a user action, and the Host has no model-facing file picker.
-- No upload into an arbitrary subdirectory of the workspace: the Files page exposes the workspace root to this control, not the folder currently expanded in the tree, so a folder you upload becomes a top-level directory.
+- The destination is chosen through the panel's folder navigation, not by the tree's current selection.
 - Empty folders are preserved only for a drop, not for the folder picker, because the picker does not report them.
 - Uploads target the Host filesystem that serves the Session; a Session whose directory lives on a remote filesystem is out of scope.

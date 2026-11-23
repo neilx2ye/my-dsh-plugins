@@ -254,3 +254,23 @@ test('formats byte sizes for the panel', async () => {
   assert.equal(internals.formatBytes(500 * 1024 * 1024), '500 MB');
   assert.equal(internals.formatBytes(1536), '1.50 KB');
 });
+
+test('joins, walks, and displays destination directories', async () => {
+  const { internals } = await loadClient();
+  assert.equal(internals.joinRelative('', 'docs'), 'docs');
+  assert.equal(internals.joinRelative('docs', ''), 'docs');
+  assert.equal(internals.joinRelative('docs', 'api'), 'docs/api');
+  assert.equal(internals.joinRelative('docs', '/deep/nested/'), 'docs/deep/nested');
+  assert.equal(internals.parentRelative('docs/api'), 'docs');
+  assert.equal(internals.parentRelative('docs'), '');
+  assert.equal(internals.displayPath('/root/work', ''), '/root/work');
+  assert.equal(internals.displayPath('/root/work', 'docs/api'), '/root/work/docs/api');
+  assert.equal(internals.displayPath('/root/work/', 'docs'), '/root/work/docs');
+  assert.equal(internals.displayPath('C:\\work', 'docs'), 'C:\\work\\docs');
+});
+
+test('renders the skipped outcome', async () => {
+  const { internals } = await loadClient();
+  const item = { name: 'a.txt', savedAs: '', replaced: false, progress: 0, detail: '' };
+  assert.equal(internals.statusText({ ...item, state: 'skipped' }, t), 'statusSkipped');
+});

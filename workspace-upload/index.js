@@ -14,7 +14,7 @@
  */
 
 import { createWriteStream } from 'node:fs';
-import { link, lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { basename, join, resolve, sep } from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -28,6 +28,12 @@ const UPLOAD_PATH = '/api/workspace-upload/file';
 
 /** Exact Fetch route creating one workspace-relative directory. */
 export const DIRECTORY_PATH = '/api/workspace-upload/dir';
+
+/** Exact Fetch route reporting whether one target file exists. */
+export const STAT_PATH = '/api/workspace-upload/stat';
+
+/** Exact Fetch route listing the child directories of one workspace directory. */
+export const DIRS_PATH = '/api/workspace-upload/dirs';
 
 /** Exact Fetch route reporting the accepted file size to the browser. */
 const LIMITS_PATH = '/api/workspace-upload/limits';
@@ -80,7 +86,7 @@ export function apply(ctx, config) {
         methods: ['GET'],
         requestBody: 'buffered',
         fetch: () => Response.json(
-          { maxUploadBytes: settings.maxUploadBytes },
+          { maxUploadBytes: settings.maxUploadBytes, onConflict: settings.onConflict },
           { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } },
         ),
       }),
@@ -101,6 +107,28 @@ export function apply(ctx, config) {
   ctx.effect(
     () =>
       ctx.connection.fetch.register({
+        path: STAT_PATH,
+        methods: ['GET'],
+        requestBody: 'buffered',
+        fetch: (request) => statRoute(ctx, request),
+      }),
+    'workspace-upload: stat route',
+  );
+
+  ctx.effect(
+    () =>
+      ctx.connection.fetch.register({
+        path: DIRS_PATH,
+        methods: ['GET'],
+        requestBody: 'buffered',
+        fetch: (request) => dirsRoute(ctx, request),
+      }),
+    'workspace-upload: directories route',
+  );
+
+  ctx.effect(
+    () =>
+      ctx.connection.fetch.register({
         path: DIRECTORY_PATH,
         methods: ['POST'],
         requestBody: 'buffered',
@@ -108,6 +136,125 @@ export function apply(ctx, config) {
       }),
     'workspace-upload: directory route',
   );
+}
+
+/**
+ * Resolve one existing workspace directory without creating it.
+ * @param {string} rootPath - the Session's workspace directory.
+ * @param {string} directory - workspace-relative directory, empty for the root.
+ * @returns {Promise<string>} the canonical directory.
+ * @throws {UploadError} when the directory escapes the workspace or is unavailable.
+ */
+async function existingDirectory(rootPath, directory) {
+  const rootCanonical = await realpath(rootPath).catch((error) => {
+    throw new UploadError(404, 'workspace-unavailable', `the workspace directory is not readable: ${messageOf(error)}`);
+  });
+  const requested = resolve(rootCanonical, directory === '' ? '.' : directory);
+  if (!within(rootCanonical, requested)) {
+    throw new UploadError(400, 'path-outside-workspace', 'the directory is outside the workspace');
+  }
+  let canonical;
+  try {
+    canonical = await realpath(requested);
+  } catch (error) {
+    throw new UploadError(404, 'directory-unavailable', `the directory is not readable: ${messageOf(error)}`);
+  }
+  if (!within(rootCanonical, canonical)) {
+    throw new UploadError(400, 'path-outside-workspace', 'the directory links outside the workspace');
+  }
+  const info = await stat(canonical).catch(() => undefined);
+  if (info === undefined || !info.isDirectory()) {
+    throw new UploadError(403, 'not-a-directory', 'the path is not a directory');
+  }
+  return canonical;
+}
+
+/**
+ * Answer whether one target file already exists in the workspace.
+ * @param {object} ctx - Host root Context.
+ * @param {Request} request - admitted owner Fetch request.
+ * @returns {Promise<Response>} `{ exists, kind }` or a structured failure.
+ */
+async function statRoute(ctx, request) {
+  const params = new URL(request.url).searchParams;
+  const sessionId = (params.get('sessionId') ?? '').trim();
+  if (sessionId === '') return failure(400, 'invalid-session', 'sessionId is required');
+  let name;
+  try {
+    name = safeName(params.get('name') ?? '');
+  } catch (error) {
+    return failure(400, 'invalid-name', error instanceof Error ? error.message : String(error));
+  }
+  const directory = params.get('dir') ?? '';
+  if (directory.includes('\u0000')) return failure(400, 'invalid-directory', 'the directory name contains a NUL byte');
+
+  const root = await workspaceRootOf(ctx, sessionId);
+  if (!root.ok) return failure(root.status, root.code, root.message);
+
+  let canonical;
+  try {
+    canonical = await existingDirectory(root.path, directory);
+  } catch (error) {
+    if (error instanceof UploadError) return failure(error.status, error.code, error.message);
+    return failure(500, 'directory-failed', messageOf(error));
+  }
+  const info = await lstat(join(canonical, name)).catch(() => undefined);
+  return Response.json(
+    { exists: info !== undefined, kind: kindOf(info) },
+    { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } },
+  );
+}
+
+/**
+ * List the child directories of one workspace directory.
+ * @param {object} ctx - Host root Context.
+ * @param {Request} request - admitted owner Fetch request.
+ * @returns {Promise<Response>} `{ dirs }` or a structured failure.
+ */
+async function dirsRoute(ctx, request) {
+  const params = new URL(request.url).searchParams;
+  const sessionId = (params.get('sessionId') ?? '').trim();
+  if (sessionId === '') return failure(400, 'invalid-session', 'sessionId is required');
+  const directory = params.get('dir') ?? '';
+  if (directory.includes('\u0000')) return failure(400, 'invalid-directory', 'the directory name contains a NUL byte');
+
+  const root = await workspaceRootOf(ctx, sessionId);
+  if (!root.ok) return failure(root.status, root.code, root.message);
+
+  let canonical;
+  try {
+    canonical = await existingDirectory(root.path, directory);
+  } catch (error) {
+    if (error instanceof UploadError) return failure(error.status, error.code, error.message);
+    return failure(500, 'directory-failed', messageOf(error));
+  }
+  let children;
+  try {
+    children = await readdir(canonical, { withFileTypes: true });
+  } catch (error) {
+    return failure(500, 'directory-failed', messageOf(error));
+  }
+  const dirs = children
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+  return Response.json(
+    { dirs },
+    { headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } },
+  );
+}
+
+/**
+ * Classify one filesystem entry for the conflict check.
+ * @param {import('node:fs').Stats | undefined} info - entry metadata.
+ * @returns {'file' | 'directory' | 'symlink' | 'other' | 'absent'} the kind.
+ */
+function kindOf(info) {
+  if (info === undefined) return 'absent';
+  if (info.isSymbolicLink()) return 'symlink';
+  if (info.isDirectory()) return 'directory';
+  if (info.isFile()) return 'file';
+  return 'other';
 }
 
 /**
@@ -152,7 +299,9 @@ export function readSettings(config) {
     : DEFAULT_MAX_UPLOAD_BYTES;
   return {
     maxUploadBytes,
-    onConflict: raw.onConflict === 'overwrite' ? 'overwrite' : 'rename',
+    // ask: the browser asks before replacing; rename: pick a free name;
+    // overwrite: replace without asking.
+    onConflict: raw.onConflict === 'rename' || raw.onConflict === 'overwrite' ? raw.onConflict : 'ask',
   };
 }
 
@@ -194,6 +343,17 @@ async function uploadRoute(ctx, settings, request) {
     return refuse(request, 500, 'directory-failed', error instanceof Error ? error.message : String(error));
   }
 
+  const overwrite = params.get('overwrite') === '1';
+  const mode = overwrite ? 'overwrite' : settings.onConflict;
+  if (mode === 'ask') {
+    // Answer the conflict without consuming the body: the browser asks the user
+    // and sends the same file again with overwrite=1 when they choose replace.
+    const existing = await lstat(join(destination, name)).catch(() => undefined);
+    if (existing !== undefined) {
+      return refuse(request, 409, 'name-conflict', 'a file with that name already exists');
+    }
+  }
+
   let written = 0;
   const temporary = join(destination, `${TEMP_PREFIX}${randomBytes(8).toString('hex')}.part`);
   try {
@@ -206,7 +366,7 @@ async function uploadRoute(ctx, settings, request) {
   }
 
   try {
-    const stored = await publish(temporary, destination, name, settings.onConflict);
+    const stored = await publish(temporary, destination, name, mode === 'ask' ? 'error' : mode);
     return Response.json(
       {
         ok: true,
@@ -363,6 +523,8 @@ async function publish(temporary, directory, name, onConflict) {
       // fall through to the alternative-name search below.
       if (!(error instanceof UploadError) || error.code !== 'name-conflict') throw error;
     }
+  } else if (onConflict === 'error') {
+    throw new UploadError(409, 'name-conflict', 'a file with that name already exists');
   } else if (onConflict === 'overwrite') {
     if (existing.isSymbolicLink()) throw new UploadError(409, 'symlink-target', 'the destination name is a symbolic link');
     if (existing.isDirectory()) throw new UploadError(409, 'directory-target', 'the destination name is a directory');
