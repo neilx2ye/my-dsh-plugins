@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
+  <!-- A document sheet with three text lines. -->
+  <rect x="7.75" y="4.75" width="16.5" height="21.5" rx="2.5" stroke="#8f97ab" stroke-width="1.7"/>
+  <rect x="11" y="9.5" width="9" height="1.6" rx="0.8" fill="#8f97ab" opacity="0.75"/>
+  <rect x="11" y="13.4" width="7" height="1.6" rx="0.8" fill="#8f97ab" opacity="0.55"/>
+  <rect x="11" y="17.3" width="5" height="1.6" rx="0.8" fill="#8f97ab" opacity="0.4"/>
+  <!-- A fountain-pen nib writing on the sheet's lower edge. -->
+  <path d="M18.4 30.4 L16.9 25.9 L24.4 18.4 L27.9 21.9 L20.4 29.4 Z" fill="#5b5bd6"/>
+  <path d="M24.4 18.4 L27.9 21.9 L29.6 20.2 A1.9 1.9 0 0 0 26.1 16.7 Z" fill="#3f3fa8"/>
+  <path d="M18.4 30.4 L16.9 25.9 L19.1 26.2 L20.4 29.4 Z" fill="#3f3fa8"/>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Article Studio",
+    "description": "A writing desk in the sidebar above Identities, with article CRUD, a Markdown editor, live typography controls, and autosave. Press Ctrl/⌘+K at the caret — or select text and click the discussion bubble — to open a slim command bar. It speaks as the identity selected in 身份 (Personal Agent): same name, persona, memory, and home; with no identity it falls back to the standalone Writing assistant preset. The partner reads the open article, rewrites or drafts it, replaces passages, restyles the page, and can run shell commands, fetch references, or publish through curl, MCP tools, or configured `pushTargets`. Every autosave is mirrored into a local git repository under the profile's `article-studio/repo`; 版本历史 lists commits, previews a version, and restores it. The bar shows replies and tool names but not approval prompts, so use a full-access permission preset or approve tools in the session. Turning the plugin off removes the panel and tools; articles and the git repository stay on disk."
+  }
+}

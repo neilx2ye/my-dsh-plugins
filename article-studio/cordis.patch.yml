@@ -1,0 +1,102 @@
+# The Article Studio bundle patch.
+#
+# Two rows:
+#
+#   - `article-studio` is the Host plugin: article storage, the browser routes,
+#     and the `article_*` tools registered on the writing Agent's own scope.
+#   - `preset-scribe` declares the named writing identity those articles talk
+#     to. It keeps the shell, filesystem, and web tools so the writing partner
+#     can run scripts, fetch references, and publish through curl or MCP, and
+#     it deliberately leaves out interview tools the caret popover cannot
+#     render.
+#
+# Applies to this profile only; the profile's own patch layer still wins.
+
+- insert:
+    - id: article-studio
+      name: '@local/article-studio'
+      config:
+        # Fallback preset when no Personal Agent identity exists yet.
+        agentPreset: scribe
+        # Preset used when the conversation runs as a Personal Agent identity.
+        identityPreset: personal
+        # Name shown only in the no-identity fallback.
+        # Empty name means the client's localized fallback (写作助手).
+        identityName: ''
+        # Presets kept out of the workspace session roster. The fallback
+        # writing preset is an implementation detail of this panel.
+        hiddenPresets: [scribe]
+        # Autosave history: one local git repository per profile.
+        git: true
+        gitCommitDelayMs: 2500
+        # Optional working directory for the writing Sessions. Omit to use the
+        # profile's default working directory.
+        # cwd: /root/默认工作区
+        # Optional HTTP endpoints for the `article_push` tool. Each entry:
+        #   { id, name, url, method: POST|PUT, format: json|markdown, headers }
+        pushTargets: []
+        # When false, article_push may only use a configured target above; the
+        # model cannot send article text to an arbitrary URL through this tool.
+        allowAdHocPush: false
+        # Timeout for one push request, in milliseconds.
+        pushTimeoutMs: 20000
+
+    - id: preset-scribe
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: scribe
+        name: Writing assistant
+        description: A writing partner for the article editor — drafts, rewrites, structures, restyles, and publishes with shell, web, and MCP tools.
+        order: 6
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                你是「写作助手」，一位专注中文长文写作与排版的搭档。用户正在文章编辑器里写作，你的任务是帮他把文章写下去、改清楚、排好看，而不是只给建议。
+
+                工作方式：
+                - 每次请求都会给出当前文章的 ID、标题、样式，以及选区、光标前后的文字。需要读全文时先调用 article_read。
+                - 要改标题或正文，直接调用 article_update（整篇重写）或 article_replace（局部替换）、article_append（续写）；要改排版，调用 article_style。改完用一两句话说明改了什么，不要在回复里粘贴全文。
+                - 用户说“出草稿”“接着写”时，把成稿写进文章，再简述思路；用户问结构、思路、建议时，直接回答，不必改稿。
+                - 保持中文书面语：句子短，少用被动句和套话，段落有节奏。保留作者的用词习惯，不要擅自改成翻译腔。
+                - 需要查资料可以用 web_fetch，需要跑脚本、处理文件或把内容推送到其他平台可以用 bash 和 curl，也可以用 article_push 调用配置好的推送目标；MCP 工具可用时同样使用。
+                - 不要编造事实和引文；需要用户决定时，把选项列清楚问一句。
+                - 不要在文章里插入“以下是修改后的版本”这类过程性文字，也不要把解释性内容写进正文。
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              search: true
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024

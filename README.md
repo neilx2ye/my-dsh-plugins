@@ -15,6 +15,8 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `system-usage/` | `@local/system-usage` | 1.0.0 | CPU and memory meter in the sidebar foot, with a hover readout and a click-to-refresh sample |
 | `workspace-upload/` | `@local/workspace-upload` | 0.3.0 | Upload files or whole folders into any workspace subfolder from the Files page, with live progress, replace/cancel prompts on name conflicts, and name-safe publishing |
 | `workspace-download/` | `@local/workspace-download` | 0.2.0 | Download a previewed file, any folder as ZIP (with an optional .git), or the whole workspace from the Files side panel, streamed by the Host |
+| `article-studio/` | `@local/article-studio` | 0.1.0 | A writing desk in the sidebar: articles with autosave and local git history, typography controls, and a writing partner summoned at the caret |
+| `cache-cleaner/` | `@local/cache-cleaner` | 0.1.0 | Settings page that reports and clears session logs, projection checkpoints, and canvas artifacts across every DSH home on the machine, skipping live sessions |
 | `feishu-bridge/` | `@local/feishu-bridge` | 0.1.2 | Talk to the Harness from Feishu over a WebSocket long connection: one durable Session per chat, streamed replies, no public callback URL |
 
 Each plugin is a plain npm package with a `dsh.bundle.patch` layer. Releases attach
@@ -24,21 +26,23 @@ need neither git nor registry credentials — only HTTPS.
 ## Install on a device
 
 Open DSH Web → **Plugins** → **Add plugin** and paste one tarball URL per plugin
-(replace `<owner>/<repo>` and `v0.8.2` with the release you want):
+(replace `<owner>/<repo>` and `v0.9.0` with the release you want):
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-dsh-artifacts-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-command-runner-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-codex-images-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-feishu-bridge-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-git-explorer-0.5.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-mcp-settings-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-user-switcher-0.2.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-personal-agent-0.5.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-system-usage-1.0.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-upload-0.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-download-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-dsh-artifacts-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-command-runner-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-codex-images-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-feishu-bridge-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-git-explorer-0.5.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-mcp-settings-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-user-switcher-0.2.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-web-push-notify-1.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-personal-agent-0.5.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-system-usage-1.0.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-workspace-upload-0.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-workspace-download-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-article-studio-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-cache-cleaner-0.1.0.tgz
 ```
 
 After each install click **Enable now**, then restart `dsh web` when the profile has no HMR.
@@ -47,18 +51,20 @@ CLI equivalent:
 
 ```bash
 dsh plugin --profile web add \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-dsh-artifacts-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-command-runner-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-codex-images-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-feishu-bridge-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-git-explorer-0.5.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-mcp-settings-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-user-switcher-0.2.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-personal-agent-0.5.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-system-usage-1.0.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-upload-0.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.8.2/local-workspace-download-0.2.0.tgz
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-dsh-artifacts-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-command-runner-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-codex-images-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-feishu-bridge-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-git-explorer-0.5.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-mcp-settings-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-user-switcher-0.2.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-web-push-notify-1.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-personal-agent-0.5.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-system-usage-1.0.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-workspace-upload-0.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-workspace-download-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-article-studio-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.9.0/local-cache-cleaner-0.1.0.tgz
 ```
 
 Installing only records the dependency. To load a bundle, click **Enable now**, or append its
@@ -112,10 +118,12 @@ bundle that differs from its directory here; `--apply` copies the package files 
   it has no configuration beyond `minSampleMs` and stores nothing.
 - **Workspace upload**: `@local/workspace-upload` streams browser picks into the Session's own
   working directory (500 MiB per file by default, configurable, `onConflict: rename`); no agent tool is added.
+- **Article Studio**: `@local/article-studio` keeps articles and their git history under the profile's `article-studio/` directory; its writing partner speaks as the identity selected in Personal Agent, and falls back to a hidden `scribe` preset. The panel sits above Identities in the sidebar.
+- **Cache cleaner**: `@local/cache-cleaner` deletes permanently — session logs, projection checkpoints, and canvas documents are real data, not rebuildable caches. It discovers every `/home/<account>/.dsh` plus `/root/.dsh`, refuses homes it cannot read/write, and skips sessions any running DSH process still holds open.
 - **Feishu bridge**: `@local/feishu-bridge` needs a Feishu custom app with the bot capability and the message events above; it dials out to Feishu, so no public IP or callback URL is required. Credentials are entered in Settings.
 - **First push quirk**: pushing a brand-new branch and its first `v*` tag in one
   `git push` does not start the workflow. Push the branch first, then the tag
-  (`git push -u origin main` then `git push origin v0.8.2`), or re-push the tag alone.
+  (`git push -u origin main` then `git push origin v0.9.0`), or re-push the tag alone.
 
 ## Layout
 
@@ -135,6 +143,8 @@ system-usage/                   plugin source (CPU/memory meter)
 workspace-upload/               plugin source (upload files/folders into the Session workspace)
 workspace-download/             plugin source (download files/folders/workspace from Files)
 feishu-bridge/                  plugin source (Feishu long-connection bridge)
+article-studio/                 plugin source (writing desk + writing partner)
+cache-cleaner/                  plugin source (Settings page: clear session/canvas caches)
 web-push-notify/                plugin source (Web Push notifications)
 tools/notify.py                 push a message to WeChat channels (config in notify.env)
 ```

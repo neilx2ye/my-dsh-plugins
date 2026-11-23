@@ -1,0 +1,6 @@
+- insert:
+    - id: cache-cleaner
+      name: '@local/cache-cleaner'
+      config:
+        extraHomes: []
+        minAgeMinutes: 0
