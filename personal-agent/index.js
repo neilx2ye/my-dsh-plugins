@@ -1023,14 +1023,6 @@ export function apply(ctx, rawConfig) {
         throw new Error('personal-agent: direct messages need a subagent provider, which this Host does not expose');
       }
       const history = readDm(key);
-      await appendDm(key, {
-        id: `dm-${randomUUID()}`,
-        role: 'agent',
-        identityId: caller.identity.id,
-        name: caller.identity.name,
-        text: message,
-        time: new Date().toISOString(),
-      });
       const prompt = composeDirectMessagePrompt({
         caller: caller.identity,
         target: target.identity,
@@ -1042,15 +1034,23 @@ export function apply(ctx, rawConfig) {
       const activation = await subagents.startActivation({
         provider: provider.name,
         label: `${caller.identity.name} \u2192 ${target.identity.name}`,
-        request: {
-          cwd: target.paths.home,
-          agentPreset: PRESET_ID,
-          prompt: [{ type: 'text', text: prompt }],
-          parent: exec.agent,
-          signal,
-        },
+        cwd: target.paths.home,
+        agentPreset: PRESET_ID,
+        prompt: [{ type: 'text', text: prompt }],
+        parent: exec.agent,
         signal,
         delivery: 'caller',
+      });
+      // Record the message only after the target's child was accepted: a
+      // rejected start never reached the target, so it must not appear in the
+      // shared thread.
+      await appendDm(key, {
+        id: `dm-${randomUUID()}`,
+        role: 'agent',
+        identityId: caller.identity.id,
+        name: caller.identity.name,
+        text: message,
+        time: new Date().toISOString(),
       });
       try {
         const result = await activation.result;
@@ -1527,13 +1527,10 @@ export function apply(ctx, rawConfig) {
     const activation = await subagents.startActivation({
       provider: provider.name,
       label: `${guest.identity.name} · ${group.name}`,
-      request: {
-        cwd: guest.paths.home,
-        agentPreset: PRESET_ID,
-        prompt: [{ type: 'text', text: prompt }],
-        parent: exec.agent,
-        signal: exec.signal,
-      },
+      cwd: guest.paths.home,
+      agentPreset: PRESET_ID,
+      prompt: [{ type: 'text', text: prompt }],
+      parent: exec.agent,
       signal: exec.signal,
       delivery: 'caller',
     });
