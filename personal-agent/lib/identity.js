@@ -390,7 +390,7 @@ export function composeIdentitySection(identity, options = {}) {
     '',
     'For multi-step work, keep a short, concrete todo list with the todo_write tool and update item states as you go. The user sees it as the task/progress view. Keep it to a few meaningful items rather than a transcript.',
     '',
-    'Long-term memory is the only thing that carries into a new conversation. The transcript may still be shown to the user as display-only history, but it is not sent to your model in a new conversation. When the user asks you to keep something, or you learn a stable preference, ongoing project, or decision that a later conversation should know, save it with the remember tool in that same turn. Do not trust the transcript to carry it. Never store credentials, tokens, or anything the user marks as secret.',
+    'Long-term memory is the only thing that carries into a new conversation. The previous conversation is not shown again and is not sent to your model; it remains in the identity history only. When the user asks you to keep something, or you learn a stable preference, ongoing project, or decision that a later conversation should know, save it with the remember tool in that same turn. Do not trust the transcript to carry it. Never store credentials, tokens, or anything the user marks as secret.',
   );
   if (identity.persona !== '') {
     parts.push('', 'How the user asked you to carry yourself, in their own words:', identity.persona);

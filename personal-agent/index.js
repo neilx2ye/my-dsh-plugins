@@ -39,6 +39,7 @@ import {
   normalizeDirectMessage,
   DM_TRANSCRIPT_LIMIT,
 } from './lib/direct-message.js';
+import { conversationsToClear } from './lib/conversations.js';
 import {
   Config,
   composeIdentitySection,
@@ -81,12 +82,10 @@ const GROUP_SEND_PATH = '/api/personal-agent/group/send';
 const GROUP_STATE_PATH = '/api/personal-agent/group/state';
 /** Read one image attached to a multi-agent group message. */
 const GROUP_IMAGE_PATH = '/api/personal-agent/group/image';
-/** Acknowledge the fresh conversation auto-switch; clears the pending marker. */
+/** Acknowledge an opened `/new` target so the Host can archive the old history. */
 const FRESH_CONSUME_PATH = '/api/personal-agent/fresh/consume';
 /** Compact the forked transcript after a fresh-conversation switch. */
 const COMPACT_PATH = '/api/personal-agent/compact';
-/** Read a prior conversation's text for the display-only history block. */
-const TRANSCRIPT_PATH = '/api/personal-agent/transcript';
 /** Mark an identity or group as read. */
 const READ_PATH = '/api/personal-agent/read';
 
@@ -553,7 +552,7 @@ function buildNewConversationTool(recordFor, scheduleConversation) {
   return {
     name: 'new_conversation',
     description:
-      'Start a fresh conversation after the current turn with an empty model context. The previous transcript stays visible in the new conversation as a display-only history block, but it is not sent to the model. Before switching, save anything durable the user wants to keep with the remember tool. The UI automatically switches to the new conversation; the user does not need to click anything. Use it when the user asks for a fresh start or the topic changes.',
+      'Start a fresh conversation after the current turn with an empty model context. The earlier conversation stays in the identity history but is not shown again and is not sent to the model. Before switching, save anything durable the user wants to keep with the remember tool. The UI automatically switches to the new conversation; the user does not need to click anything. Use it when the user asks for a fresh start or the topic changes.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -578,7 +577,7 @@ function buildNewConversationTool(recordFor, scheduleConversation) {
       scheduleConversation(record, exec);
       return {
         scheduled: true,
-        note: `A new conversation with ${record.identity.name} will start after this turn with an empty model context. Its previous transcript stays visible as display-only history, and the old Session remains in the identity history. Save durable facts to long-term memory before switching if the user wants them kept.`,
+        note: `A new conversation with ${record.identity.name} will start after this turn with an empty model context. Its earlier conversation stays in the identity history but is not shown again, and the old Session remains available there. Save durable facts to long-term memory before switching if the user wants them kept.`,
       };
     },
   };
@@ -1141,15 +1140,18 @@ export function apply(ctx, rawConfig) {
   });
 
   /**
-   * Fresh-conversation markers: identity id -> pending blank Session id. The
-   * new_conversation tool creates the blank Session after the turn; the client
-   * auto-switches to it, then consumes the marker.
+   * Fresh-conversation markers: identity id -> blank Session id. The
+   * new_conversation tool and the `/new` command create the blank Session; the
+   * client auto-switches to it.
    * @type {Map<string, string>}
    */
   const freshFile = join(dataDir, 'fresh.json');
   const freshSessions = new Map();
-  /** Source conversation shown as display-only history for each fresh Session. */
-  const freshSources = new Map();
+  // /new waits for the browser to open the replacement before archiving its
+  // source. Persist the handoff so reloading mid-switch does not lose it.
+  const pendingResets = new Map();
+  const startingResets = new Set();
+  const finishingResets = new Map();
   /** Unread assistant messages by identity id and group key. */
   const unreadIdentities = new Map();
   const unreadGroups = new Map();
@@ -1159,14 +1161,12 @@ export function apply(ctx, rawConfig) {
       if (parsed !== null && typeof parsed === 'object' && parsed.identities !== null && typeof parsed.identities === 'object') {
         for (const [identityId, value] of Object.entries(parsed.identities)) {
           const sessionId = typeof value === 'string' ? value : value?.sessionId;
-          if (typeof identityId === 'string' && typeof sessionId === 'string') freshSessions.set(identityId, sessionId);
-          const from = typeof value === 'object' && value !== null && typeof value.from === 'string' ? value.from : null;
-          if (typeof identityId === 'string' && typeof from === 'string') freshSources.set(identityId, from);
-        }
-      }
-      if (parsed !== null && typeof parsed === 'object' && parsed.sources !== null && typeof parsed.sources === 'object') {
-        for (const [identityId, from] of Object.entries(parsed.sources)) {
-          if (typeof identityId === 'string' && typeof from === 'string') freshSources.set(identityId, from);
+          if (typeof sessionId !== 'string') continue;
+          freshSessions.set(identityId, sessionId);
+          const reset = value?.reset;
+          if (typeof reset?.source === 'string' && typeof reset.workspaceId === 'string' && Array.isArray(reset.stale)) {
+            pendingResets.set(identityId, { sessionId, source: reset.source, workspaceId: reset.workspaceId, stale: reset.stale });
+          }
         }
       }
     }
@@ -1177,13 +1177,25 @@ export function apply(ctx, rawConfig) {
    * Persist the pending fresh-conversation markers.
    * @returns when the file is written.
    */
-  async function writeFresh() {
-    await mkdir(dirname(freshFile), { recursive: true, mode: 0o700 });
-    const identities = {};
-    for (const [identityId, sessionId] of freshSessions) {
-      identities[identityId] = { sessionId, from: freshSources.get(identityId) ?? null };
-    }
-    await writeFile(freshFile, `${JSON.stringify({ identities, sources: Object.fromEntries(freshSources) }, null, 2)}\n`, { mode: 0o600 });
+  let freshWrite = Promise.resolve();
+  function writeFresh() {
+    const attempt = freshWrite.then(async () => {
+      const identities = Object.fromEntries([...freshSessions].map(([identityId, sessionId]) => {
+        const reset = pendingResets.get(identityId);
+        return [identityId, reset === undefined ? { sessionId } : { sessionId, reset }];
+      }));
+      await mkdir(dirname(freshFile), { recursive: true, mode: 0o700 });
+      const temporary = `${freshFile}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, `${JSON.stringify({ identities }, null, 2)}\n`, { mode: 0o600 });
+        await rename(temporary, freshFile);
+      } catch (error) {
+        await unlink(temporary).catch(() => undefined);
+        throw error;
+      }
+    });
+    freshWrite = attempt.catch(() => undefined);
+    return attempt;
   }
 
   // Two identities must not share a home or a memory file: both would fight
@@ -1463,9 +1475,32 @@ export function apply(ctx, rawConfig) {
   }
 
   /**
-   * Fork a completed Session into a new conversation and attach it to the
-   * identity workspace. The fork keeps every event, so the user sees the same
-   * transcript; the identity module and auto-switch open the newest one.
+   * Create a blank conversation in an identity's home. The conversation keeps
+   * the identity's prompt and long-term memory but none of the earlier
+   * messages; the previous Session remains in the identity's history.
+   * @param pending.identityId - owning identity.
+   * @param sourceSessionId - Session whose turn just ended.
+   * @returns the new Session id.
+   */
+  async function forkConversation(pending, sourceSessionId) {
+    const controller = ctx.get('sessionController');
+    if (controller === undefined) throw new Error('personal-agent: session controller is unavailable');
+    const registry = await registryWithin(2000);
+    if (registry === undefined) throw new Error('personal-agent: workspace registry is unavailable');
+    const workspace = await ensureIdentity(pending.identityId, registry);
+    if (startingResets.has(pending.identityId) || pendingResets.has(pending.identityId)) return;
+    const { sessionId } = await controller.create({ workspaceId: workspace.id, agentPreset: PRESET_ID });
+    if (startingResets.has(pending.identityId) || pendingResets.has(pending.identityId)) return;
+    freshSessions.set(pending.identityId, sessionId);
+    await writeFresh();
+    logger?.info?.(`personal-agent: fresh conversation ${sessionId} after ${sourceSessionId}`);
+    return sessionId;
+  }
+
+  /**
+   * Fork a completed Session into a blank conversation and attach it to the
+   * identity workspace. The new Session starts with an empty model context;
+   * the earlier conversation stays available from the identity's history.
    * @param sourceSessionId - Session whose turn just ended.
    * @param pending.identityId - owning identity.
    */
@@ -1475,17 +1510,75 @@ export function apply(ctx, rawConfig) {
       logger?.warn?.('personal-agent: refused to start a private fresh conversation from a group session');
       return;
     }
-    const controller = ctx.get('sessionController');
-    if (controller === undefined) throw new Error('personal-agent: session controller is unavailable');
-    const registry = await registryWithin(2000);
-    if (registry === undefined) throw new Error('personal-agent: workspace registry is unavailable');
-    const workspace = await ensureIdentity(pending.identityId, registry);
-    const sessionId = `session-${randomUUID()}`;
-    await controller.create({ sessionId, workspaceId: workspace.id, agentPreset: PRESET_ID });
-    freshSessions.set(pending.identityId, sessionId);
-    freshSources.set(pending.identityId, sourceSessionId);
+    await forkConversation(pending, sourceSessionId);
+  }
+
+  /** Prepare `/new` without archiving the Session still on screen. */
+  async function prepareConversationReset(record, source) {
+    const identityId = record.identity.id;
+    if (startingResets.has(identityId) || finishingResets.has(identityId)) {
+      throw new Error('该身份正在切换对话，请稍后重试。');
+    }
+    startingResets.add(identityId);
+    try {
+      const controller = ctx.get('sessionController');
+      if (controller === undefined) throw new Error('personal-agent: session controller is unavailable');
+      const registry = await registryWithin(2000);
+      if (registry === undefined) throw new Error('personal-agent: workspace registry is unavailable');
+      const workspace = await ensureIdentity(identityId, registry);
+      const stale = conversationsToClear(workspace.sessionIds, {
+        archived: registry.archivedSessionIds,
+        excluded: [...groups.keys(), ...participantSessions.keys()],
+      });
+      const { sessionId } = await controller.create({ workspaceId: workspace.id, agentPreset: PRESET_ID });
+      const previousFresh = freshSessions.get(identityId);
+      const previousReset = pendingResets.get(identityId);
+      freshSessions.set(identityId, sessionId);
+      pendingResets.set(identityId, { sessionId, source, workspaceId: workspace.id, stale });
+      try {
+        await writeFresh();
+      } catch (error) {
+        if (previousFresh === undefined) freshSessions.delete(identityId);
+        else freshSessions.set(identityId, previousFresh);
+        if (previousReset === undefined) pendingResets.delete(identityId);
+        else pendingResets.set(identityId, previousReset);
+        throw error;
+      }
+    } finally {
+      startingResets.delete(identityId);
+    }
+  }
+
+  /** Archive only the old Sessions from this reset, after the browser handoff. */
+  async function archiveResetHistory(identityId, reset, registry) {
+    const workspace = registry.get(reset.workspaceId);
+    if (workspace === undefined || !workspace.sessionIds.includes(reset.sessionId) ||
+        registry.archivedSessionIds.includes(reset.sessionId)) {
+      throw new Error('personal-agent: reset target is no longer available');
+    }
+    const members = new Set(workspace.sessionIds);
+    const stale = conversationsToClear(reset.stale.filter((id) => members.has(id)), {
+      keep: reset.sessionId,
+      archived: registry.archivedSessionIds,
+      excluded: [...groups.keys(), ...participantSessions.keys()],
+    });
+    let cleared = 0;
+    let failed = 0;
+    for (const oldSessionId of stale) {
+      try {
+        await registry.archiveSession(oldSessionId, { stopActivity: true });
+        cleared += 1;
+      } catch (error) {
+        // A blank Session that was never persisted has no history to clear.
+        if (error?.name === 'WorkspaceUnknownSessionError') continue;
+        failed += 1;
+        logger?.warn?.(`personal-agent: could not archive conversation ${oldSessionId}: ${messageOf(error)}`);
+      }
+    }
+    pendingResets.delete(identityId);
     await writeFresh();
-    logger?.info?.(`personal-agent: fresh display-only conversation ${sessionId} after ${sourceSessionId}`);
+    logger?.info?.(`personal-agent: /new opened ${reset.sessionId}; archived ${cleared} earlier conversations`);
+    return { cleared, failed };
   }
 
   ctx.effect(
@@ -1595,6 +1688,58 @@ export function apply(ctx, rawConfig) {
     scope.tools.register(
       buildAskIdentityTool((sessionId, agent) => groups.get(sessionId) ?? groupForAgent(agent, ctx), askGroupGuest),
       { when: whenGroupHost },
+    );
+  });
+
+  ctx.inject(['agents'], (scope) => {
+    const installs = new Map();
+    /**
+     * Attach `/new` to one private identity Agent. Registering beneath the
+     * Agent context keeps the command out of project, group, and subagent
+     * conversations.
+     * @param agent - Agent to decorate.
+     */
+    const install = (agent) => {
+      if (installs.has(agent)) return;
+      if (recordForAgent(agent, scope) === undefined) return;
+      if (agent.session.origin === 'subagent' || groupForAgent(agent, scope) !== undefined) return;
+      const fiber = agent.ctx.inject(['commands'], (commandCtx) => {
+        commandCtx.commands.register({
+          name: 'new',
+          description: '开始新的对话并清除该身份的历史对话记录',
+          handler: async ({ agent: callingAgent, rawInput }) => {
+            if (rawInput.trim() !== '') return { kind: 'error', text: '用法：/new（不需要参数）' };
+            const record = recordForAgent(callingAgent, ctx);
+            if (record === undefined) return { kind: 'error', text: '/new 只能在身份对话中使用。' };
+            if (groupForAgent(callingAgent, ctx) !== undefined) {
+              return { kind: 'error', text: '/new 只能在私人的身份对话中使用，群聊不适用。' };
+            }
+            try {
+              await prepareConversationReset(record, callingAgent.session.id);
+              return { kind: 'success', text: '新对话已创建，打开后将归档旧对话。' };
+            } catch (error) {
+              return { kind: 'error', text: `无法开始新的对话：${messageOf(error)}` };
+            }
+          },
+        });
+      });
+      installs.set(agent, fiber);
+    };
+    for (const agent of scope.agents.list()) install(agent);
+    scope.on('agent/created', ({ agent }) => install(agent));
+    scope.on('agent/disposed', ({ agent }) => {
+      const fiber = installs.get(agent);
+      if (fiber === undefined) return;
+      installs.delete(agent);
+      fiber.dispose().catch((error) => logger?.warn?.(`personal-agent: command cleanup failed: ${messageOf(error)}`));
+    });
+    scope.effect(
+      () => () => {
+        const fibers = [...installs.values()];
+        installs.clear();
+        for (const fiber of fibers) fiber.dispose().catch(() => undefined);
+      },
+      'personal-agent: identity commands',
     );
   });
 
@@ -2041,8 +2186,8 @@ export function apply(ctx, rawConfig) {
           const workspace = registry?.list().find((candidate) => candidate.id === info?.workspaceId);
           const latestSessionId = workspace?.sessionIds.find((id) => !archived.has(id) && !groups.has(id)) ?? null;
           const fresh = freshSessions.get(identity.id);
-          const freshSessionId = typeof fresh === 'string' && workspace?.sessionIds.includes(fresh) && !archived.has(fresh) ? fresh : null;
-          const historySessionId = freshSessionId === null ? null : freshSources.get(identity.id) ?? null;
+          const freshSessionId = !startingResets.has(identity.id) && typeof fresh === 'string' &&
+            workspace?.sessionIds.includes(fresh) && !archived.has(fresh) ? fresh : null;
           return {
             id: identity.id,
             name: identity.name,
@@ -2060,7 +2205,7 @@ export function apply(ctx, rawConfig) {
             },
             latestSessionId,
             freshSessionId,
-            historySessionId,
+            freshResetFrom: freshSessionId === null ? null : pendingResets.get(identity.id)?.source ?? null,
             unread: unreadIdentities.get(identity.id) ?? 0,
             memory: {
               path: record.paths.memoryFile,
@@ -2230,8 +2375,8 @@ export function apply(ctx, rawConfig) {
 
             states.delete(identityId);
             await writeState(stateFile, states, logger);
+            pendingResets.delete(identityId);
             if (freshSessions.delete(identityId)) await writeFresh();
-            freshSources.delete(identityId);
 
             const nextIdentities = settings.identities.filter((identity) => identity.id !== identityId);
             try {
@@ -2881,9 +3026,26 @@ export function apply(ctx, rawConfig) {
               return failure(400, 'invalid-body', messageOf(error));
             }
             const identityId = typeof body.identityId === 'string' ? body.identityId : '';
-            if (freshSessions.delete(identityId)) await writeFresh();
-            freshSources.delete(identityId);
-            return json({ ok: true, identityId });
+            const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+            const reset = pendingResets.get(identityId);
+            // A delayed acknowledgement must never archive a newer reset.
+            if (sessionId === '' || reset?.sessionId !== sessionId || startingResets.has(identityId)) {
+              return json({ ok: true, cleared: 0, failed: 0 });
+            }
+            let attempt = finishingResets.get(identityId);
+            if (attempt === undefined) {
+              attempt = (async () => {
+                const registry = await registryWithin(2000);
+                if (registry === undefined) throw new Error('workspace registry is unavailable');
+                return archiveResetHistory(identityId, reset, registry);
+              })().finally(() => finishingResets.delete(identityId));
+              finishingResets.set(identityId, attempt);
+            }
+            try {
+              return json({ ok: true, ...await attempt });
+            } catch (error) {
+              return failure(500, 'archive-failed', messageOf(error));
+            }
           },
         }),
       'personal-agent: consume fresh conversation marker',
@@ -2923,64 +3085,6 @@ export function apply(ctx, rawConfig) {
     scope.effect(
       () =>
         scope.connection.fetch.register({
-          path: TRANSCRIPT_PATH,
-          methods: ['POST'],
-          requestBody: 'buffered',
-          fetch: async (request) => {
-            let body;
-            try {
-              body = await readObjectBody(request);
-            } catch (error) {
-              return failure(400, 'invalid-body', messageOf(error));
-            }
-            const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-            const allowed = [...freshSources.values()].includes(sessionId);
-            if (!allowed) return failure(404, 'unknown-history', 'this Session is not a pending display-only history source');
-            const controller = ctx.get('sessionController');
-            if (controller === undefined || typeof controller.events !== 'function') {
-              return failure(409, 'session-controller-unavailable', 'this Host cannot read Session events');
-            }
-            let page;
-            try {
-              page = await controller.events(
-                { address: { kind: 'session', sessionId }, maxMessages: 200 },
-                AbortSignal.timeout(5000),
-              );
-            } catch (error) {
-              return failure(500, 'transcript-failed', messageOf(error));
-            }
-            const messages = [];
-            for (const record of page.records) {
-              if (record.type !== 'event') continue;
-              const event = record.event;
-              if (event.type !== 'user/message' && event.type !== 'assistant/message') continue;
-              const data = event.data;
-              const message = event.type === 'assistant/message' ? data?.message : data;
-              if (message === null || typeof message !== 'object') continue;
-              if (event.type === 'user/message' && message.source?.kind !== 'user') continue;
-              const content = Array.isArray(message.content) ? message.content : [];
-              const text = content
-                .filter((block) => block !== null && typeof block === 'object' && block.type === 'text')
-                .map((block) => (typeof block.text === 'string' ? block.text : ''))
-                .join('\n')
-                .trim();
-              if (text === '') continue;
-              messages.push({
-                seq: event.seq,
-                role: event.type === 'assistant/message' ? 'assistant' : 'user',
-                text,
-              });
-            }
-            messages.sort((left, right) => left.seq - right.seq);
-            return json({ ok: true, messages, hasMore: page.hasMore });
-          },
-        }),
-      'personal-agent: display-only transcript route',
-    );
-
-    scope.effect(
-      () =>
-        scope.connection.fetch.register({
           path: COMPACT_PATH,
           methods: ['POST'],
           requestBody: 'buffered',
@@ -2993,7 +3097,7 @@ export function apply(ctx, rawConfig) {
             }
             const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
             const identityId = [...freshSessions.entries()].find(([, fresh]) => fresh === sessionId)?.[0];
-            if (identityId === undefined) {
+            if (identityId === undefined || pendingResets.has(identityId) || startingResets.has(identityId)) {
               return failure(409, 'not-a-fresh-conversation', 'this Session is not waiting for context compaction');
             }
             const controller = ctx.get('sessionController');
@@ -3024,8 +3128,10 @@ export function apply(ctx, rawConfig) {
               if (execution.result.kind === 'error') {
                 return failure(409, 'compact-failed', execution.result.text);
               }
-              freshSessions.delete(identityId);
-              await writeFresh();
+              if (freshSessions.get(identityId) === sessionId && !pendingResets.has(identityId)) {
+                freshSessions.delete(identityId);
+                await writeFresh();
+              }
               return json({ ok: true, compacted: true, sessionId, note: execution.result.text });
             } catch (error) {
               return failure(409, 'compact-failed', messageOf(error));
@@ -3067,10 +3173,10 @@ export function apply(ctx, rawConfig) {
               const workspace = await ensureIdentity(record.identity.id, registry);
               const archived = new Set(registry.archivedSessionIds);
               const fresh = freshSessions.get(record.identity.id);
-              const sessionId = typeof fresh === 'string' && workspace.sessionIds.includes(fresh) && !archived.has(fresh)
-                ? fresh
-                : await newestConversation(workspace, registry);
-              return json({ ok: true, workspaceId: workspace.id, sessionId, title: workspace.title, agentPreset: PRESET_ID });
+              const preferFresh = !startingResets.has(record.identity.id) && typeof fresh === 'string' &&
+                workspace.sessionIds.includes(fresh) && !archived.has(fresh);
+              const sessionId = preferFresh ? fresh : await newestConversation(workspace, registry);
+              return json({ ok: true, workspaceId: workspace.id, sessionId, preferFresh, title: workspace.title, agentPreset: PRESET_ID });
             } catch (error) {
               const info = homesInfo.get(record.identity.id);
               if (info !== undefined) info.error = messageOf(error);

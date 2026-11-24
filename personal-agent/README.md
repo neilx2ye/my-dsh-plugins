@@ -159,10 +159,10 @@ directory to run in.
    for the identity's home and newest non-archived Session.
 2. If one exists, the browser opens it; otherwise it creates a blank Session in
    that home with the `personal` preset.
-3. The browser auto-switches to the blank Session an agent creates with
-   `new_conversation`; the previous transcript is shown as a display-only block
-   and the new Session's model context starts empty. The previous conversation
-   also stays in the identity's history.
+3. The browser auto-switches to a blank Session the agent creates with
+   `new_conversation`, or the user creates with `/new`; the new Session's model
+   context starts empty. A `new_conversation` Session keeps the earlier
+   conversation in the identity's history; `/new` clears that history too.
 
 ### Projects and sessions
 
@@ -290,7 +290,7 @@ workspace conversations; it cannot re-enable Personal there.
 | --- | --- |
 | `remember` | Append one durable fact to the calling identity's memory |
 | `recall` | Search or read the calling identity's memory |
-| `new_conversation` | Start a blank context after this turn; the previous transcript is shown display-only |
+| `new_conversation` | Start a blank context after this turn; the earlier conversation stays in history |
 | `message_identity` | Send a private 1:1 direct message to another identity and return its reply |
 | `ask_identity` | Legacy groups only: let the host ask one guest identity for a reply |
 
@@ -300,20 +300,23 @@ visible only in identity conversations, not in project sessions.
 
 ### Starting a fresh conversation
 
-An identity agent can call `new_conversation` when the user asks for a fresh
-start or changes to an unrelated topic. The tool registers a request for the
-end of the current turn; the Host then creates a blank Session in the identity
-workspace and records the previous Session as its display-only history source.
-The new model context is empty except for the identity prompt and long-term
-memory.
+`/new` is the human command for a clean start. Type it in a private identity
+conversation and the Host creates a blank Session in that identity's home. The
+browser opens the new Session first, then the Host archives the earlier private
+conversations captured by the reset. If you leave before the switch, reopening
+that identity opens the prepared conversation and finishes the reset. If the new
+Session cannot open, the old history is kept. The command does not appear in
+project, group, or subagent conversations. The new model context contains only
+the identity prompt and long-term memory. Group and already archived Sessions
+are left alone.
 
-The browser auto-follows the blank Session. An **上一段对话 · 仅展示** panel above
-the composer fetches the previous transcript from the Host and renders its
-user/assistant text. That panel is client-side only; it is never added to the
-new Session's model context. The panel can be collapsed, survives while the user
-chats in the new conversation, and a `↺` history action lists earlier Sessions
-as before. Opening history suppresses the auto-switch. The tool schedules one
-fresh conversation per turn; it is not an automatic per-message policy.
+An identity agent can also call `new_conversation` when the user asks for a
+fresh start or changes to an unrelated topic. The tool registers a request for
+the end of the current turn; the Host then creates a blank Session in the
+identity workspace. Unlike `/new`, this keeps the earlier conversation in the
+identity's history. The new model context is empty except for the identity
+prompt and long-term memory, and no previous transcript is shown in the new
+conversation.
 
 Anything that must survive the switch has to be in long-term memory. The
 identity prompt tells the agent to call `remember` for durable preferences,
@@ -510,11 +513,11 @@ DSH_HOME=/tmp/pa-check dsh --profile check --dump-config | grep -A4 'personal-ag
   conversation when clicked.
 - **No global conversation search.** Project history is a per-project
   disclosure; the old full-text session search UI is not mounted.
-- **New conversations are blank, with display-only history.** `new_conversation`
-  creates an empty-context Session and shows the old transcript in a client-only
-  panel. The transcript is not sent to the model. Durable information must be
-  written with `remember`; the previous Session also remains in the identity
-  history (`↺`).
+- **New conversations are blank.** `new_conversation` creates an empty-context
+  Session and keeps the old one in the identity history (`↺`); `/new` also
+  archives that history. No previous transcript is shown in the new
+  conversation or sent to the model. Durable information must be written with
+  `remember`.
 - **Group replies are parallel, not streamed.** Every participant is prompted at
   the same time; each sees the user message and the history up to it, not the
   other participants' same-round replies. A reply appears in the feed when that

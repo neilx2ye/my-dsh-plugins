@@ -7,14 +7,15 @@
  * - the sidebar lists identities where the Workspace browser used to be, and
  *   clicking one opens its newest conversation (the Host creates one only when
  *   none exists);
- * - the shell's New Session button is hidden and the brand's new-session click
- *   is neutralised, so starting a conversation is not a user-facing action;
+ * - a blank conversation the user asks for — `/new` in an identity chat, or the
+ *   agent's `new_conversation` tool — is followed by the browser: the Host
+ *   prepares the Session first and archives old chats only after it is open;
  * - the Personal agent page manages identities: create, edit, and per-identity
  *   memory, plus a "Talk to …" action.
  *
  * Everything is profile-scoped. The only host modifications are a string
- * stylesheet for this bundle's own classes and two narrowly targeted
- * compatibility rules that hide the shell's session controls (see `STYLE`).
+ * stylesheet for this bundle's own classes and the narrow compatibility rules
+ * that hide the shipped session rows of identity homes (see `STYLE`).
  */
 
 window.__ModuleLoader__.load({
@@ -59,10 +60,8 @@ window.__ModuleLoader__.load({
     const GROUP_IMAGE_MAX_EDGE = 4096;
     /** Main-panel key for the group feed. */
     const GROUP_PANEL_ID = 'personal-agent-group';
-    /** Clear the pending fresh-conversation marker after auto-switching. */
+    /** Confirm the `/new` target is open before archiving the previous chats. */
     const FRESH_CONSUME_URL = 'api/personal-agent/fresh/consume';
-    /** Read the previous conversation for the display-only history block. */
-    const TRANSCRIPT_URL = 'api/personal-agent/transcript';
     /** Clear unread assistant messages for an identity or group. */
     const READ_URL = 'api/personal-agent/read';
 
@@ -245,11 +244,7 @@ window.__ModuleLoader__.load({
       'history.title': 'Conversations with {name}',
       'history.empty': 'No earlier conversations yet.',
       'history.close': 'Close',
-      'history.displayTitle': 'Previous conversation · display only',
-      'history.displayCount': '{count} messages',
-      'history.displayEmpty': 'No text messages to show.',
-      'history.displayFailed': 'Could not load the previous conversation.',
-      'history.you': 'You',
+      'history.archiveFailed': '{count} earlier conversations could not be archived.',
       'thinking.show': 'Show process',
       'thinking.hide': 'Hide process',
       'unread.title': '{count} unread messages',
@@ -394,11 +389,7 @@ window.__ModuleLoader__.load({
       'history.title': '与 {name} 的历史对话',
       'history.empty': '还没有更早的对话。',
       'history.close': '关闭',
-      'history.displayTitle': '上一段对话 · 仅展示',
-      'history.displayCount': '{count} 条消息',
-      'history.displayEmpty': '没有可展示的文字消息。',
-      'history.displayFailed': '上一段对话加载失败。',
-      'history.you': '你',
+      'history.archiveFailed': '有 {count} 段旧对话未能归档。',
       'thinking.show': '显示过程',
       'thinking.hide': '隐藏过程',
       'unread.title': '{count} 条未读消息',
@@ -774,19 +765,6 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 .pagent-header-identity{display:flex;align-items:center;gap:8px;min-width:0;max-width:min(48vw,420px)}
 .pagent-header-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.4;font-weight:600;letter-spacing:.01em}
 .pagent-header-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.pagent-display-history{box-sizing:border-box;width:100%;margin:0 auto 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}
-.pagent-display-history-head{appearance:none;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;min-height:34px;padding:6px 11px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;text-align:left;cursor:pointer}
-.pagent-display-history-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
-.pagent-display-history-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.pagent-display-history-title{flex:none;font-size:11.5px;line-height:1.4;font-weight:600;letter-spacing:.01em}
-.pagent-display-history-count{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pagent-display-history-chevron{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1}
-.pagent-display-history-body{display:flex;flex-direction:column;gap:10px;max-height:min(38vh,420px);overflow:auto;padding:2px 12px 12px;border-top:1px solid var(--dsw-alias-border-l1)}
-.pagent-display-message{display:flex;flex-direction:column;gap:3px;padding:6px 0 6px 9px;border-left:2px solid var(--dsw-alias-border-l1);min-width:0}
-.pagent-display-message[data-role="assistant"]{border-left-color:var(--dsw-alias-brand-primary)}
-.pagent-display-role{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:1.4;font-weight:600;letter-spacing:.02em}
-.pagent-display-text{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
-.pagent-display-history-empty{margin:0;padding:8px 0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5}
 @media (max-width:820px){.pagent-manager{grid-template-columns:minmax(0,1fr)}.pagent-page{padding:20px 16px 40px}.pagent-help-grid{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.pagent-sk{animation:none}}
 `;
@@ -1156,9 +1134,15 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       store.setActive(identityId);
       store.setActiveGroup(null);
       const sessionId = typeof result.data.sessionId === 'string' && result.data.sessionId !== ''
-        ? realSessionFor(ctx, result.data.workspaceId, result.data.sessionId)
+        ? result.data.preferFresh === true
+          ? result.data.sessionId
+          : realSessionFor(ctx, result.data.workspaceId, result.data.sessionId)
         : null;
       if (typeof sessionId === 'string' && sessionId !== '') {
+        const sessions = ctx.get('sessions');
+        if (result.data.preferFresh === true && sessions?.list.getSnapshot().byId[sessionId] === undefined) {
+          await sessions?.refresh();
+        }
         ui.openSession(sessionId);
       } else {
         ui.startSession(result.data.workspaceId, { agentPreset: 'personal' });
@@ -1246,6 +1230,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
         const openHistory = (identity) => {
         const workspace = workspaceList?.items?.find((item) => item.workspaceId === identity.home.workspaceId);
         const groupIds = new Set(groups.map((group) => group.id ?? group.sessionId));
+        const archived = new Set(workspaceList?.archivedSessionIds ?? []);
         const sessions = (workspace?.sessionIds ?? [])
           .map((id) => sessionList?.byId?.[id])
           .filter(
@@ -1253,6 +1238,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
               session !== undefined &&
               session.blank !== true &&
               !groupIds.has(session.id) &&
+              !archived.has(session.id) &&
               session.id !== conversationFocus.sessionId,
           )
           .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
@@ -3182,7 +3168,33 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
      * The auto-switch poll reads it and only switches while an identity
      * conversation is on screen.
      */
-    const conversationFocus = { identityId: null, sessionId: null, historySessionId: null, switching: false };
+    const conversationFocus = { identityId: null, sessionId: null, historySessionId: null };
+
+    /** Follow the exact prepared target. Archive only on a later pass when it is open. */
+    async function followFreshConversation({ identity, source, fromHistory, stillViewing, sessions, workspaces, ui, acknowledge }) {
+      const fresh = identity?.freshSessionId;
+      if (typeof fresh !== 'string' || !stillViewing()) return false;
+      const resetFrom = identity.freshResetFrom;
+      if (fresh === source) {
+        const current = sessions.binding(fresh)?.session.getSnapshot();
+        if (typeof resetFrom !== 'string' || current?.openState !== 'open') return false;
+        await acknowledge(identity.id, fresh);
+        return true;
+      }
+      if (typeof resetFrom === 'string' ? resetFrom !== source : fromHistory) return false;
+      if (sessions.list.getSnapshot().byId[fresh] === undefined) await sessions.refresh();
+      if (!stillViewing()) return false;
+      const summary = sessions.list.getSnapshot().byId[fresh];
+      const workspace = workspaces.list.getSnapshot();
+      if (summary === undefined || summary.origin === 'subagent' || summary.parentSessionId !== undefined ||
+          workspace.archivedSessionIds.includes(fresh) ||
+          !workspace.items.some((item) => item.workspaceId === identity.home.workspaceId && item.sessionIds.includes(fresh))) return false;
+      return sessions.using(fresh, { source: 'controllerOperation', signal: AbortSignal.timeout(5000) }, (reference) => {
+        if (reference.binding.session.getSnapshot().openState !== 'open' || !stillViewing()) return false;
+        ui.openSession(fresh);
+        return true;
+      });
+    }
 
     /**
      * Subscribe to one client observable snapshot.
@@ -3388,6 +3400,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       const openHistory = (identity) => {
         const workspace = workspaceList?.items?.find((item) => item.workspaceId === identity.home.workspaceId);
         const groupIds = new Set(groups.map((group) => group.id ?? group.sessionId));
+        const archived = new Set(workspaceList?.archivedSessionIds ?? []);
         const sessions = (workspace?.sessionIds ?? [])
           .map((id) => sessionList?.byId?.[id])
           .filter(
@@ -3395,6 +3408,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
               session !== undefined &&
               session.blank !== true &&
               !groupIds.has(session.id) &&
+              !archived.has(session.id) &&
               session.id !== conversationFocus.sessionId,
           )
           .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
@@ -4128,115 +4142,6 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
     }
 
     /**
-     * Display-only history for a fresh conversation. It fetches the previous
-     * conversation's text from the Host and renders it above the composer; the
-     * text never enters the new Session's model context.
-     * @param props.sessionId - current fresh Session.
-     * @param props.ctx - client plugin context.
-     */
-    function FreshHistoryDock(props) {
-      const ctx = props.ctx;
-      const tr = translatorOf(props);
-      const { state } = useStoreSnapshot();
-      const workspaces = ctx.get('workspaces');
-      const workspaceList = useObservable(workspaces?.list);
-      const sessionId = props.sessionId;
-      const [open, setOpen] = React.useState(true);
-      const [messages, setMessages] = React.useState(null);
-      const [failure, setFailure] = React.useState(false);
-
-      React.useEffect(() => {
-        if (state === null) void store.load();
-      }, [state === null]);
-
-      const workspace = workspaceList?.items?.find(
-        (item) => Array.isArray(item.sessionIds) && item.sessionIds.includes(sessionId),
-      );
-      const identity = state?.identities?.find(
-        (candidate) =>
-          candidate.home.workspaceId === workspace?.workspaceId &&
-          candidate.freshSessionId === sessionId,
-      ) ?? null;
-      const source = identity?.historySessionId ?? null;
-
-      React.useEffect(() => {
-        if (source === null) {
-          setMessages(null);
-          setFailure(false);
-          return undefined;
-        }
-        let cancelled = false;
-        setMessages(null);
-        setFailure(false);
-        void requestJson(TRANSCRIPT_URL, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sessionId: source }),
-        })
-          .then((result) => {
-            if (cancelled) return;
-            if (!result.ok || result.data?.ok !== true || !Array.isArray(result.data.messages)) {
-              throw new Error(result.data?.message ?? `HTTP ${result.status}`);
-            }
-            setMessages(result.data.messages);
-          })
-          .catch(() => {
-            if (!cancelled) setFailure(true);
-          });
-        return () => {
-          cancelled = true;
-        };
-      }, [source]);
-
-      if (identity === null || source === null) return null;
-      const list = messages ?? [];
-      return h(
-        'section',
-        { className: 'pagent-display-history', 'data-open': open ? 'true' : 'false' },
-        h(
-          'button',
-          {
-            type: 'button',
-            className: 'pagent-display-history-head',
-            'aria-expanded': open,
-            onClick: () => setOpen((value) => !value),
-          },
-          h('span', { className: 'pagent-display-history-title' }, tr('history.displayTitle')),
-          h(
-            'span',
-            { className: 'pagent-display-history-count' },
-            tr('history.displayCount', { count: list.length }),
-          ),
-          h('span', { className: 'pagent-display-history-chevron', 'aria-hidden': true }, open ? '▾' : '▸'),
-        ),
-        open
-          ? h(
-              'div',
-              { className: 'pagent-display-history-body' },
-              failure
-                ? h('p', { className: 'pagent-display-history-empty' }, tr('history.displayFailed'))
-                : messages === null
-                  ? h('p', { className: 'pagent-display-history-empty' }, '…')
-                  : list.length === 0
-                    ? h('p', { className: 'pagent-display-history-empty' }, tr('history.displayEmpty'))
-                    : list.map((message) =>
-                        h(
-                          'div',
-                          { key: message.seq, className: 'pagent-display-message', 'data-role': message.role },
-                          h(
-                            'span',
-                            { className: 'pagent-display-role' },
-                            message.role === 'user' ? tr('history.you') : identity.name,
-                          ),
-                          h('p', { className: 'pagent-display-text' }, message.text),
-                        ),
-                      ),
-            )
-          : null,
-      );
-    }
-
-    /**
      * Shared state, created once per loaded module generation.
      */
     const store = createStore();
@@ -4248,6 +4153,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       __mentions: { mentionTokenAt, mentionCandidates, applyMention },
       /** Pure group-composer image helpers, exported for the node test suite. */
       __images: { groupImageMediaType, imageBase64Of, imageBytesOf },
+      __conversations: { followFreshConversation },
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en: EN, zh: ZH }), 'personal-agent: dictionaries');
 
@@ -4420,21 +4326,6 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
           ),
         );
 
-        // Display-only history for a fresh conversation. It is a client-side
-        // transcript, not part of the new Session's model context.
-        ctx.slots.inject('conversation.input.dock', () =>
-          ctx.slots.register(
-            {
-              name: 'conversation.input.dock',
-              id: 'personal-agent-display-history',
-              order: 20,
-              locale: NS,
-              inject: (sessionId) => ({ sessionId }),
-            },
-            (props) => h(FreshHistoryDock, { ...props, ctx }),
-          ),
-        );
-
         // Working bubble above the composer. It also reports the current
         // identity Session to the auto-switch poll.
         ctx.slots.inject('conversation.input.dock', () =>
@@ -4498,48 +4389,67 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
           };
         }, 'personal-agent: identity module above workspaces');
 
-        // Follow a newly forked conversation automatically. The status
-        // component above reports which identity Session is on screen; when
-        // the Host state's newest Session for that identity changes and the
-        // current Session is idle, open the new one. The fork carries the full
-        // transcript, so history stays visible across the switch.
+        // Keep the source selected until the exact new Session is available.
+        // The next pass verifies that the new composer is open before sending
+        // the acknowledgement that permits the Host to archive the old chats.
+        let checkFreshConversation;
+        ctx.on('command/executed', (sessionId, name, result) => {
+          if (name === 'new' && result.kind === 'success' && conversationFocus.sessionId === sessionId) {
+            void checkFreshConversation?.();
+          }
+        });
         ctx.effect(() => {
           let cancelled = false;
           let polling = false;
-          const timer = setInterval(async () => {
-            if (cancelled || polling) return;
-            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-            const focus = conversationFocus;
-            if (focus.identityId === null || focus.sessionId === null || focus.switching) return;
+          const poll = async () => {
+            if (cancelled || polling || document.visibilityState !== 'visible') return;
+            const { identityId, sessionId, historySessionId } = conversationFocus;
+            if (identityId === null || sessionId === null) return;
             const sessions = ctx.get('sessions');
-            const current = sessions?.list.getSnapshot().byId[focus.sessionId];
-            if (current?.running === true) return;
+            const ui = ctx.get('uiWorkspace');
+            const workspaces = ctx.get('workspaces');
+            if (sessions === undefined || ui === undefined || workspaces === undefined) return;
+            const stillViewing = () => !cancelled && conversationFocus.sessionId === sessionId &&
+              conversationFocus.identityId === identityId && ctx.get('layout')?.panelInfo.getSnapshot().activePanelId === null &&
+              (sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) > 0;
+            if (!stillViewing()) return;
             polling = true;
             try {
               const result = await requestJson(STATE_URL);
               if (!result.ok) return;
-              if (focus.historySessionId === focus.sessionId) return;
-              const identity = result.data?.identities?.find((item) => item.id === focus.identityId);
-              const fresh = identity?.freshSessionId;
-              if (typeof fresh !== 'string' || fresh === focus.sessionId) return;
-              const freshSummary = sessions?.list.getSnapshot().byId[fresh];
-              if (freshSummary?.origin === 'subagent') return;
-              const ui = ctx.get('uiWorkspace');
-              if (ui === undefined) return;
-              focus.switching = true;
-              console.debug(`personal-agent: auto-switching to fresh conversation ${fresh}`);
-              await ui.openSession(fresh);
-              focus.sessionId = fresh;
-              await store.load(true).catch(() => undefined);
+              const identity = result.data?.identities?.find((item) => item.id === identityId);
+              if (typeof identity?.freshResetFrom !== 'string' && sessions.list.getSnapshot().byId[sessionId]?.running === true) return;
+              const changed = await followFreshConversation({
+                identity, source: sessionId, fromHistory: historySessionId === sessionId,
+                stillViewing, sessions, workspaces, ui,
+                acknowledge: async (id, fresh) => {
+                  const response = await requestJson(FRESH_CONSUME_URL, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ identityId: id, sessionId: fresh }),
+                  });
+                  if (!response.ok || response.data?.ok !== true) {
+                    throw new Error(response.data?.message ?? `HTTP ${response.status}`);
+                  }
+                  if (response.data.failed > 0 && stillViewing()) {
+                    const scope = sessions.scope(fresh);
+                    scope?.get('conversation')?.input.for(scope).notify('error',
+                      translate('history.archiveFailed', { count: response.data.failed }));
+                  }
+                },
+              });
+              if (changed && !cancelled) await store.load(true).catch(() => undefined);
             } catch (error) {
               console.warn('personal-agent: auto-switch failed:', messageOf(error));
             } finally {
-              focus.switching = false;
               polling = false;
             }
-          }, 900);
+          };
+          checkFreshConversation = poll;
+          const timer = setInterval(poll, 900);
           return () => {
             cancelled = true;
+            checkFreshConversation = undefined;
             clearInterval(timer);
           };
         }, 'personal-agent: auto-switch to new conversations');
