@@ -64,9 +64,11 @@ want the canvas for certain.
   opens the side panel; the expanded state is remembered per artifact.
 - **Canvas tab.** A card's *Open canvas* button opens the canvas: preview,
   source, and edit modes, a version panel with timestamps and one-click
-  restore, back/forward through the canvases you have visited in this tab, a
-  recent-canvases list, rename, copy, download, and delete. `Ctrl/⌘+S` saves an
-  edit as a new version.
+  restore, back/forward through the canvases you have visited in this tab with
+  a `3/8` counter that lists them, rename, copy, download, and delete. The bar
+  keeps navigation, the name, the current version, and the actions on one line
+  and wraps the actions onto a second line in a narrow panel. `Ctrl/⌘+S` saves
+  an edit as a new version.
 - **Gallery.** The sparkle button in the conversation header, or the *Artifacts*
   entry in the right sidebar's add-tab menu, opens a gallery filtered to *This
   chat* or *This project*.

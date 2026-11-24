@@ -277,30 +277,45 @@ window.__ModuleLoader__.load({
 .dsa-canvas[data-type="chart"]{--dsa-accent:#f2a93b}
 .dsa-canvas[data-type="code"]{--dsa-accent:#8b93a1}
 .dsa-bar{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px 11px;border-bottom:.5px solid var(--dsw-alias-border-l3,#2c2f35);background:var(--dsw-alias-bg-layer-1,#17191d)}
-.dsa-bar-icon{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:9px;color:var(--dsa-accent);background:color-mix(in srgb,var(--dsa-accent) 13%,transparent);border:.5px solid color-mix(in srgb,var(--dsa-accent) 26%,transparent)}
-.dsa-bar-titles{display:flex;flex-direction:column;min-width:0;flex:1;gap:1px}
-.dsa-bar-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:13px;line-height:18px;letter-spacing:-.006em;background:none;border:0;color:inherit;padding:0;text-align:left;font-family:inherit}
+.dsa-bar-headline{display:flex;align-items:center;gap:7px;min-width:0}
+.dsa-bar-glyph{display:grid;place-items:center;flex:none;width:18px;height:18px;border-radius:5px;color:var(--dsa-accent);background:color-mix(in srgb,var(--dsa-accent) 13%,transparent)}
+.dsa-bar-titles{display:flex;flex-direction:column;min-width:0;flex:1;gap:2px}
+.dsa-bar-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:12.5px;line-height:17px;letter-spacing:-.006em;background:none;border:0;color:inherit;padding:0;text-align:left;font-family:inherit}
 .dsa-bar-title:not(:disabled){cursor:pointer}
 .dsa-bar-title:not(:disabled):hover{color:var(--dsa-accent)}
-.dsa-bar-sub{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;line-height:15px;color:var(--dsw-alias-label-tertiary,#8b9098)}
-.dsa-tools{display:flex;align-items:center;flex-wrap:wrap;gap:4px;flex:none}
-.dsa-btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;height:28px;padding:0 9px;border:.5px solid transparent;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);font:inherit;font-size:11.5px;line-height:1;cursor:pointer;white-space:nowrap;transition:background-color .12s,color .12s,border-color .12s}
+.dsa-bar-sub{display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden;font-size:10.5px;line-height:14px;color:var(--dsw-alias-label-tertiary,#8b9098);white-space:nowrap}
+.dsa-bar-sub>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.dsa-bar-ver{flex:none;display:inline-flex;align-items:center;height:14px;padding:0 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-3,#2a2e35);color:var(--dsw-alias-label-secondary,#9aa0a8);font-size:10px;font-weight:600;letter-spacing:.01em}
+.dsa-bar-ver[data-old="true"]{background:color-mix(in srgb,var(--dsa-accent) 18%,transparent);color:var(--dsa-accent)}
+.dsa-tools{display:flex;align-items:center;flex-wrap:wrap;gap:3px;flex:none}
+.dsa-toolsep{flex:none;width:1px;height:15px;margin:0 2px;background:var(--dsw-alias-border-l2,#3a3d44)}
+.dsa-btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;height:26px;padding:0 8px;border:.5px solid transparent;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);font:inherit;font-size:11px;line-height:1;cursor:pointer;white-space:nowrap;transition:background-color .12s,color .12s,border-color .12s}
+.dsa-btn.dsa-ico{width:26px;padding:0}
 .dsa-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13));color:var(--dsw-alias-label-primary,#e7e8ea)}
 .dsa-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px}
-.dsa-btn:disabled{opacity:.4;cursor:default}
+.dsa-btn:disabled{opacity:.38;cursor:default}
 .dsa-btn[aria-pressed="true"]{background:var(--dsw-alias-bg-layer-3,#2a2e35);color:var(--dsw-alias-label-primary,#e7e8ea);border-color:var(--dsw-alias-border-l2,#3a3d44)}
 .dsa-btn.dsa-danger:hover:not(:disabled){color:var(--dsw-alias-state-error-primary,#f85149);background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f85149) 13%,transparent)}
 .dsa-btn.dsa-primary{background:var(--dsa-accent);color:#fff;border-color:transparent;font-weight:600}
 .dsa-btn.dsa-primary:hover:not(:disabled){filter:brightness(1.08);background:var(--dsa-accent);color:#fff}
-.dsa-seg{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:9px;background:var(--dsw-alias-bg-layer-2,#202329);border:.5px solid var(--dsw-alias-border-l2,#3a3d44)}
-.dsa-seg .dsa-btn{height:22px;padding:0 8px;font-size:11px;border-radius:6px}
+.dsa-seg{display:inline-flex;align-items:center;gap:1px;padding:1px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#202329);border:.5px solid var(--dsw-alias-border-l2,#3a3d44)}
+.dsa-seg .dsa-btn{height:22px;padding:0 8px;font-size:10.5px;border-radius:7px}
 .dsa-seg .dsa-btn[aria-pressed="true"]{background:var(--dsw-alias-bg-layer-1,#17191d);box-shadow:0 1px 2px rgba(0,0,0,.25);border-color:var(--dsw-alias-border-l2,#3a3d44)}
 .dsa-select{appearance:none;height:28px;max-width:118px;border:.5px solid var(--dsw-alias-border-l2,#3a3d44);border-radius:8px;background:var(--dsw-alias-bg-layer-2,#202329);color:var(--dsw-alias-label-secondary,#9aa0a8);padding:0 7px;font:inherit;font-size:11px;cursor:pointer}
 .dsa-select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:1px}
 .dsa-body{flex:1;min-height:0;position:relative;display:flex;background:var(--dsw-alias-bg-base,#111317)}
 .dsa-pane{position:relative;flex:1;min-width:0}
-.dsa-nav{display:flex;align-items:center;gap:2px;flex:none}
-.dsa-nav-select{max-width:170px}
+.dsa-nav{position:relative;display:flex;align-items:center;gap:1px;flex:none;padding:1px;border:.5px solid var(--dsw-alias-border-l2,#3a3d44);border-radius:9px;background:var(--dsw-alias-bg-layer-2,#202329)}
+.dsa-nav .dsa-btn{height:24px;min-width:24px;padding:0;border-radius:7px}
+.dsa-nav .dsa-btn:disabled{opacity:.34}
+.dsa-nav-count{min-width:42px;padding:0 5px;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.02em;color:var(--dsw-alias-label-tertiary,#8b9098)}
+.dsa-nav-count[aria-expanded="true"]{background:var(--dsw-alias-bg-layer-3,#2a2e35);color:var(--dsw-alias-label-primary,#e7e8ea)}
+.dsa-history{position:absolute;top:calc(100% + 7px);left:0;z-index:30;display:flex;flex-direction:column;gap:2px;width:238px;max-height:240px;overflow:auto;padding:5px;border:.5px solid var(--dsw-alias-border-l2,#3a3d44);border-radius:11px;background:var(--dsw-alias-bg-layer-1,#17191d);box-shadow:0 16px 38px rgba(0,0,0,.42);scrollbar-width:thin}
+.dsa-history-item{appearance:none;display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:6px 8px;border:.5px solid transparent;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);font:inherit;font-size:11.5px;line-height:1.35;text-align:left;cursor:pointer}
+.dsa-history-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.13));color:var(--dsw-alias-label-primary,#e7e8ea)}
+.dsa-history-item[data-active="true"]{background:color-mix(in srgb,var(--dsa-accent) 15%,transparent);border-color:color-mix(in srgb,var(--dsa-accent) 34%,transparent);color:var(--dsw-alias-label-primary,#e7e8ea)}
+.dsa-history-no{flex:none;width:15px;text-align:right;color:var(--dsw-alias-label-tertiary,#8b9098);font-size:10.5px;font-variant-numeric:tabular-nums}
+.dsa-history-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsa-versions{flex:none;display:flex;flex-direction:column;width:188px;min-width:0;border-left:.5px solid var(--dsw-alias-border-l3,#2c2f35);background:var(--dsw-alias-bg-layer-1,#17191d)}
 .dsa-versions-head{flex:none;padding:9px 11px;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary,#8b9098);border-bottom:.5px solid var(--dsw-alias-border-l3,#2c2f35)}
 .dsa-versions-body{flex:1;min-height:0;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
@@ -387,7 +402,6 @@ window.__ModuleLoader__.load({
   .dsa-stage-inline[data-kind="chart"],.dsa-stage-inline[data-kind="mermaid"],.dsa-stage-inline[data-kind="markdown"],.dsa-stage-inline[data-kind="code"]{height:clamp(300px,48vh,460px)}
   .dsa-bar{padding:8px}
   .dsa-btn{padding:0 6px}
-  .dsa-nav-select{max-width:128px}
   .dsa-versions{width:148px}
   .dsa-sheetwrap,.dsa-gridstage{padding:10px}
   .dsa-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -1972,6 +1986,9 @@ try {
       const [confirmDelete, setConfirmDelete] = React.useState(false);
       const [busy, setBusy] = React.useState(false);
       const [showVersions, setShowVersions] = React.useState(false);
+      const [showHistory, setShowHistory] = React.useState(false);
+      /** The nav cluster, which also holds the history list, so an outside press can close it. */
+      const navRef = React.useRef(null);
       const [history, setHistory] = React.useState(() => readHistory(sessionId, tabId));
       /** Latest history, readable from callbacks without re-subscribing. */
       const historyRef = React.useRef(history);
@@ -1998,7 +2015,26 @@ try {
 
       React.useEffect(() => {
         setShowVersions(false);
+        setShowHistory(false);
       }, [id]);
+
+      React.useEffect(() => {
+        if (!showHistory) return undefined;
+        const outside = (event) => {
+          const node = navRef.current;
+          if (node !== null && event.target instanceof Node && node.contains(event.target)) return;
+          setShowHistory(false);
+        };
+        const escape = (event) => {
+          if (event.key === 'Escape') setShowHistory(false);
+        };
+        document.addEventListener('pointerdown', outside, true);
+        document.addEventListener('keydown', escape, true);
+        return () => {
+          document.removeEventListener('pointerdown', outside, true);
+          document.removeEventListener('keydown', escape, true);
+        };
+      }, [showHistory]);
 
       React.useEffect(() => {
         if (id === '') return;
@@ -2213,12 +2249,12 @@ try {
           { className: 'dsa-bar' },
           h(
             'div',
-            { className: 'dsa-nav' },
+            { className: 'dsa-nav', ref: navRef },
             h(
               'button',
               {
                 type: 'button',
-                className: 'dsa-btn',
+                className: 'dsa-btn dsa-ico',
                 title: tr(t, 'canvas.back'),
                 'aria-label': tr(t, 'canvas.back'),
                 onClick: () => goTo(history.index - 1),
@@ -2230,7 +2266,7 @@ try {
               'button',
               {
                 type: 'button',
-                className: 'dsa-btn',
+                className: 'dsa-btn dsa-ico',
                 title: tr(t, 'canvas.forward'),
                 'aria-label': tr(t, 'canvas.forward'),
                 onClick: () => goTo(history.index + 1),
@@ -2240,53 +2276,90 @@ try {
             ),
             history.entries.length > 1
               ? h(
-                  'select',
-                  {
-                    className: 'dsa-select dsa-nav-select',
-                    value: String(history.index),
-                    title: tr(t, 'canvas.recent'),
-                    onChange: (event) => goTo(Number(event.target.value)),
-                  },
-                  history.entries.map((entry, index) =>
-                    h(
-                      'option',
-                      { key: `${entry.id}:${index}`, value: String(index) },
-                      `${index + 1}. ${entry.title === '' ? tr(t, 'tab.artifact') : entry.title}`,
-                    ),
-                  ),
-                )
-              : null,
-          ),
-          h('span', { className: 'dsa-bar-icon' }, h(TypeGlyph, { type: artifact.type, size: 14 })),
-          h(
-            'div',
-            { className: 'dsa-bar-titles' },
-            renaming
-              ? h('input', {
-                  className: 'dsa-nameinput',
-                  value: nameDraft,
-                  autoFocus: true,
-                  onChange: (event) => setNameDraft(event.target.value),
-                  onBlur: () => void rename(),
-                  onKeyDown: (event) => {
-                    if (event.key === 'Enter') void rename();
-                    if (event.key === 'Escape') setRenaming(false);
-                  },
-                })
-              : h(
                   'button',
                   {
                     type: 'button',
-                    className: 'dsa-bar-title',
-                    title: tr(t, 'canvas.rename'),
-                    onClick: () => setRenaming(true),
+                    className: 'dsa-btn dsa-nav-count',
+                    title: tr(t, 'canvas.recent'),
+                    'aria-label': tr(t, 'canvas.recent'),
+                    'aria-expanded': showHistory,
+                    'aria-haspopup': 'menu',
+                    onClick: () => setShowHistory((value) => !value),
                   },
-                  artifact.title,
-                ),
+                  `${history.index + 1}/${history.entries.length}`,
+                  h(primitives.IconChevronDownOutlineRegular, { size: 10 }),
+                )
+              : null,
+            showHistory && history.entries.length > 1
+              ? h(
+                  'div',
+                  { className: 'dsa-history', role: 'menu', 'aria-label': tr(t, 'canvas.recent') },
+                  history.entries
+                    .map((entry, index) => ({ entry, index }))
+                    .reverse()
+                    .map(({ entry, index }) =>
+                      h(
+                        'button',
+                        {
+                          key: `${entry.id}:${index}`,
+                          type: 'button',
+                          role: 'menuitemradio',
+                          'aria-checked': index === history.index,
+                          className: 'dsa-history-item',
+                          'data-active': index === history.index ? 'true' : 'false',
+                          onClick: () => {
+                            setShowHistory(false);
+                            goTo(index);
+                          },
+                        },
+                        h('span', { className: 'dsa-history-no' }, String(index + 1)),
+                        h('span', { className: 'dsa-history-name' }, entry.title === '' ? tr(t, 'tab.artifact') : entry.title),
+                      ),
+                    ),
+                )
+              : null,
+          ),
+          h(
+            'div',
+            { className: 'dsa-bar-titles' },
+            h(
+              'div',
+              { className: 'dsa-bar-headline' },
+              h('span', { className: 'dsa-bar-glyph' }, h(TypeGlyph, { type: artifact.type, size: 12 })),
+              renaming
+                ? h('input', {
+                    className: 'dsa-nameinput',
+                    value: nameDraft,
+                    autoFocus: true,
+                    onChange: (event) => setNameDraft(event.target.value),
+                    onBlur: () => void rename(),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') void rename();
+                      if (event.key === 'Escape') setRenaming(false);
+                    },
+                  })
+                : h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsa-bar-title',
+                      title: tr(t, 'canvas.rename'),
+                      onClick: () => setRenaming(true),
+                    },
+                    artifact.title,
+                  ),
+            ),
             h(
               'span',
               { className: 'dsa-bar-sub' },
-              `${tr(t, `type.${artifact.type}`)}${artifact.language === '' ? '' : ` · ${artifact.language}`} · v${shownVersion}${shownVersion === latest ? ` (${tr(t, 'canvas.current')})` : ''} · ${bytesLabel(shownBytes)}`,
+              h('span', null, `${tr(t, `type.${artifact.type}`)}${artifact.language === '' ? '' : ` · ${artifact.language}`}`),
+              h('span', { className: 'dsa-sep' }),
+              h('span', { className: 'dsa-bar-ver', 'data-old': viewingOld ? 'true' : 'false' }, `v${shownVersion}`),
+              h('span', { className: 'dsa-sep' }),
+              h('span', null, bytesLabel(shownBytes)),
+              viewingOld && latest !== undefined
+                ? h(React.Fragment, null, h('span', { className: 'dsa-sep' }), h('span', null, `${tr(t, 'canvas.latest')} v${latest}`))
+                : null,
             ),
           ),
           h(
@@ -2294,16 +2367,21 @@ try {
             { className: 'dsa-tools' },
             artifact.versions.length > 1
               ? h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'dsa-btn',
-                    title: tr(t, 'canvas.versions'),
-                    'aria-pressed': showVersions,
-                    onClick: () => setShowVersions((value) => !value),
-                  },
-                  h(primitives.IconClockOutlineRegular, { size: 13 }),
-                  h('span', null, `v${shownVersion}/${latest}`),
+                  React.Fragment,
+                  null,
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsa-btn',
+                      title: tr(t, 'canvas.versions'),
+                      'aria-pressed': showVersions,
+                      onClick: () => setShowVersions((value) => !value),
+                    },
+                    h(primitives.IconClockOutlineRegular, { size: 13 }),
+                    h('span', null, `v${shownVersion}/${latest}`),
+                  ),
+                  h('span', { className: 'dsa-toolsep', 'aria-hidden': 'true' }),
                 )
               : null,
             showSource
@@ -2340,26 +2418,42 @@ try {
                     tr(t, 'canvas.edit'),
                   ),
                 ),
+            h('span', { className: 'dsa-toolsep', 'aria-hidden': 'true' }),
             h(
               'button',
-              { type: 'button', className: 'dsa-btn', title: tr(t, 'canvas.copy'), onClick: () => void copy(), disabled: content === undefined },
+              {
+                type: 'button',
+                className: 'dsa-btn dsa-ico',
+                title: tr(t, 'canvas.copy'),
+                'aria-label': tr(t, 'canvas.copy'),
+                onClick: () => void copy(),
+                disabled: content === undefined,
+              },
               h(primitives.IconCopyOutlineRegular, { size: 13 }),
             ),
             h(
               'a',
               {
-                className: 'dsa-btn',
+                className: 'dsa-btn dsa-ico',
                 href: shownVersion === latest ? latestDownloadHref : downloadHref,
                 download: '',
                 title: tr(t, 'canvas.download'),
+                'aria-label': tr(t, 'canvas.download'),
               },
               h(primitives.IconDownloadOutlineRegular, { size: 13 }),
             ),
             h(
               'button',
-              { type: 'button', className: 'dsa-btn', title: tr(t, 'canvas.refresh'), onClick: view.reload },
+              {
+                type: 'button',
+                className: 'dsa-btn dsa-ico',
+                title: tr(t, 'canvas.refresh'),
+                'aria-label': tr(t, 'canvas.refresh'),
+                onClick: view.reload,
+              },
               h(primitives.IconRefreshOutlineRegular, { size: 13 }),
             ),
+            h('span', { className: 'dsa-toolsep', 'aria-hidden': 'true' }),
             confirmDelete
               ? h(
                   React.Fragment,
@@ -2375,8 +2469,9 @@ try {
                   'button',
                   {
                     type: 'button',
-                    className: 'dsa-btn dsa-danger',
+                    className: 'dsa-btn dsa-ico dsa-danger',
                     title: tr(t, 'canvas.delete'),
+                    'aria-label': tr(t, 'canvas.delete'),
                     onClick: () => setConfirmDelete(true),
                   },
                   h(primitives.IconTrashOutlineRegular, { size: 13 }),
