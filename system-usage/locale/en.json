@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "System usage",
-    "description": "Shows the CPU and memory load of the machine running DeepSeek Harness in the left sidebar, directly above Settings on its own full-width row. CPU and MEM sit side by side, each with a percentage and a short bar; the row above keeps the existing footer actions. Hover or focus for the device name, core count, load average, memory used and total, the DSH process footprint, and the sample time, and click for a fresh sample. A Host route samples the machine every two seconds while the page is visible, reads no Session data, and sends nothing off the machine. The readout is hidden while the sidebar is collapsed to its 56px rail. Turning the bundle off removes the row and stops the route."
+    "description": "Shows the CPU, memory, and disk load of the machine running DeepSeek Harness in the left sidebar. The usage row spans the full sidebar-foot width above Settings; the System users action and the settings seat share the row below it. CPU, MEM, and DISK sit side by side, each with a percentage and a short bar. Hover or focus for the device name, core count, load average, memory used and total, disk used and total on the root filesystem, the DSH process footprint, and the sample time, and click for a fresh sample. A Host route samples the machine every two seconds while the page is visible, reads no Session data, and sends nothing off the machine. The row is hidden while the sidebar is collapsed to its 56px rail. Turning the bundle off removes the row and stops the route."
   }
 }

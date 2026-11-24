@@ -9,7 +9,7 @@
  * machine and this process only — no Session data is read.
  */
 
-import { readFile } from 'node:fs/promises'
+import { readFile, statfs } from 'node:fs/promises'
 import { cpus, freemem, hostname, loadavg, platform, totalmem } from 'node:os'
 
 /** Services this bundle needs from the Web Host composition. */
@@ -74,6 +74,27 @@ async function memoryUsage() {
 }
 
 /**
+ * Read the filesystem that holds the machine's DSH data.
+ * @returns the mount path with total and used bytes, or null when unavailable.
+ */
+async function diskUsage() {
+  const target = platform() === 'win32' ? process.cwd() : '/'
+  try {
+    const stats = await statfs(target)
+    const total = stats.blocks * stats.bsize
+    const available = stats.bavail * stats.bsize
+    if (!Number.isFinite(total) || total <= 0) return null
+    return {
+      path: target,
+      totalBytes: total,
+      usedBytes: Math.min(total, Math.max(0, total - available)),
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Build the cached sampler behind the route.
  * @param minSampleMs - minimum CPU-time window between two computed samples.
  * @returns a reader that computes at most one sample per window.
@@ -91,7 +112,7 @@ function createSampler(minSampleMs) {
     const idleDelta = current.idle - baseline.idle
     const usage = totalDelta > 0 ? Math.min(1, Math.max(0, 1 - idleDelta / totalDelta)) : 0
     baseline = current
-    const memory = await memoryUsage()
+    const [memory, disk] = await Promise.all([memoryUsage(), diskUsage()])
     const processMemory = process.memoryUsage()
     const cores = cpus()
     cached = {
@@ -109,6 +130,12 @@ function createSampler(minSampleMs) {
         totalBytes: memory.totalBytes,
         usedBytes: memory.usedBytes,
         usage: memory.totalBytes > 0 ? memory.usedBytes / memory.totalBytes : 0,
+      },
+      disk: disk === null ? null : {
+        path: disk.path,
+        totalBytes: disk.totalBytes,
+        usedBytes: disk.usedBytes,
+        usage: disk.totalBytes > 0 ? disk.usedBytes / disk.totalBytes : 0,
       },
       dsh: {
         pid: process.pid,

@@ -1,11 +1,11 @@
 /**
  * Browser half of the system-usage bundle.
  *
- * One compact meter in the sidebar foot, directly above Settings on its own
- * full-width row, below the other footer actions: two side-by-side readouts
- * (CPU and memory), each a label, a percentage, and a short bar. Each footer
- * action keeps a full-width row, so this row does not consume another action's
- * space. Hovering or focusing shows cores, load average, memory totals, the DSH
+ * One compact meter in the sidebar foot: a full-width row above the System
+ * users action and the settings seat, which share the row below. It shows
+ * three side-by-side readouts (CPU, memory, disk), each a label, a percentage,
+ * and a short bar. Hovering or focusing shows cores, load average, memory
+ * totals, disk totals, the DSH
  * process footprint, and the sample time; clicking asks the Host for a fresh
  * sample. Values come from the package's own Host route and are refreshed every
  * two seconds while the page is visible; the route is document-relative so a
@@ -31,13 +31,15 @@ window.__ModuleLoader__.load({
       'footer.title': 'Device usage',
       'metric.cpu': 'CPU',
       'metric.memory': 'MEM',
-      'aria': 'CPU use {cpu}, memory use {memory}',
+      'metric.disk': 'DISK',
+      'aria': 'CPU use {cpu}, memory use {memory}, disk use {disk}',
       'aria.offline': ', host offline',
       'aria.action': '; click to refresh',
       'tooltip.title': 'Device usage · click to refresh',
       'tooltip.device': 'Device · {host}',
       'tooltip.cpu': 'CPU {percent} · {cores} cores · load {load}',
       'tooltip.memory': 'Memory {used} / {total} · {percent}',
+      'tooltip.disk': 'Disk {mount} · {used} / {total} · {percent}',
       'tooltip.dsh': 'DSH process · {rss} resident',
       'tooltip.updated': 'Sampled {time}',
       'tooltip.offline': 'Host unreachable · showing the last sample',
@@ -49,13 +51,15 @@ window.__ModuleLoader__.load({
       'footer.title': '设备占用',
       'metric.cpu': 'CPU',
       'metric.memory': '内存',
-      'aria': '本机 CPU {cpu}，内存 {memory}',
+      'metric.disk': '硬盘',
+      'aria': '本机 CPU {cpu}，内存 {memory}，硬盘 {disk}',
       'aria.offline': '，离线',
       'aria.action': '；点击刷新',
       'tooltip.title': '设备占用 · 点击刷新',
       'tooltip.device': '设备 · {host}',
       'tooltip.cpu': 'CPU {percent} · {cores} 核 · 负载 {load}',
       'tooltip.memory': '内存 {used} / {total} · {percent}',
+      'tooltip.disk': '磁盘 {mount} · {used} / {total} · {percent}',
       'tooltip.dsh': 'DSH 进程 · 常驻 {rss}',
       'tooltip.updated': '采样于 {time}',
       'tooltip.offline': '宿主不可达 · 显示上次采样',
@@ -64,18 +68,26 @@ window.__ModuleLoader__.load({
 
     /** Meter chrome. Only theme tokens are used, so light and dark both work. */
     const STYLE = `
-.dsu{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;
-  box-sizing:border-box;flex:1 1 auto;width:100%;min-width:0;height:36px;margin:0;padding:0 8px;
+.dsu{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:12px;
+  box-sizing:border-box;flex:1 1 auto;width:100%;min-width:0;height:36px;margin:0;padding:0 10px;
   border:0;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#9aa0a8);
   font:inherit;line-height:1;text-align:left;cursor:pointer;overflow:hidden}
-div:has(> .dsu){flex-direction:column;align-items:stretch;row-gap:4px}
+/* Two rows for the sidebar foot: this meter across the first, then the System
+   users action and the settings seat side by side. The actions seat wraps its
+   entries in a display:contents box, so lift it into one grid. */
+div:has(> div > div > .dsu){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:center;column-gap:8px;row-gap:4px}
+div:has(> div > .dsu){display:contents}
+div:has(> div > .dsu) > div > .dsu{grid-column:1 / -1;grid-row:1;width:100%;min-width:0}
+div:has(> div > .dsu) > div > *:not(.dsu){grid-column:1;grid-row:2;width:100%;min-width:0}
+div:has(> div > .dsu) + div{grid-column:2;grid-row:2;width:100%;min-width:0}
 .dsu:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
 .dsu:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4c8dff);outline-offset:-2px}
 .dsu-metric{display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
 .dsu-line{display:flex;align-items:baseline;justify-content:space-between;gap:3px;min-width:0}
-.dsu-key{flex:none;font-size:10px;font-weight:600;letter-spacing:.03em;line-height:1;
+.dsu-key{flex:none;font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1;
   color:var(--dsw-alias-label-secondary,#9aa0a8)}
-.dsu-val{flex:1 1 auto;min-width:0;font-size:11px;line-height:1;text-align:right;
+.dsu-val{flex:1 1 auto;min-width:0;font-size:12px;line-height:1;text-align:right;
   font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,#e7e8ea);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsu-track{display:block;width:100%;height:3px;border-radius:999px;overflow:hidden;
@@ -234,8 +246,10 @@ div:has(> .dsu){flex-direction:column;align-items:stretch;row-gap:4px}
         const data = sample.data;
         const cpu = Number.isFinite(data?.cpu?.usage) ? data.cpu.usage : null;
         const memory = Number.isFinite(data?.memory?.usage) ? data.memory.usage : null;
+        const disk = Number.isFinite(data?.disk?.usage) ? data.disk.usage : null;
         const cpuText = percentText(cpu);
         const memoryText = percentText(memory);
+        const diskText = percentText(disk);
         const offline = sample.offline;
 
         const details = [tr('tooltip.title')];
@@ -254,6 +268,14 @@ div:has(> .dsu){flex-direction:column;align-items:stretch;row-gap:4px}
             total: formatBytes(data.memory?.totalBytes),
             percent: memoryText,
           }));
+          if (data.disk !== null && data.disk !== undefined) {
+            details.push(tr('tooltip.disk', {
+              mount: data.disk.path ?? '—',
+              used: formatBytes(data.disk.usedBytes),
+              total: formatBytes(data.disk.totalBytes),
+              percent: diskText,
+            }));
+          }
           if (data.dsh !== undefined) details.push(tr('tooltip.dsh', { rss: formatBytes(data.dsh.rssBytes) }));
           details.push(tr('tooltip.updated', { time: formatTime(data.sampledAt) }));
           if (offline) details.push(tr('tooltip.offline'));
@@ -286,7 +308,7 @@ div:has(> .dsu){flex-direction:column;align-items:stretch;row-gap:4px}
             type: 'button',
             className: 'dsu',
             title: details.join('\n'),
-            'aria-label': tr('aria', { cpu: cpuText, memory: memoryText })
+            'aria-label': tr('aria', { cpu: cpuText, memory: memoryText, disk: diskText })
               + (offline ? tr('aria.offline') : '')
               + tr('aria.action'),
             'aria-describedby': detailId,
@@ -297,6 +319,7 @@ div:has(> .dsu){flex-direction:column;align-items:stretch;row-gap:4px}
           h('span', { className: 'dsu-sr', id: detailId }, details.join('. ')),
           metric('cpu', tr('metric.cpu'), cpuText, cpu),
           metric('memory', tr('metric.memory'), memoryText, memory),
+          metric('disk', tr('metric.disk'), diskText, disk),
         );
       };
     }
