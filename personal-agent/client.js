@@ -542,6 +542,8 @@ window.__ModuleLoader__.load({
 .pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] > [data-slot] > div:first-child{grid-column:2;grid-row:2;box-sizing:border-box;justify-self:start;width:auto;max-width:60%;min-width:0;padding:9px 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6}
 .pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] .md-table-wide{box-sizing:border-box;width:100%!important;max-width:100%!important;margin-left:0!important;padding-left:0!important;--dsh-table-spare:0px}
 .pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] [class*="_tableScroll"]{box-sizing:border-box;width:100%!important;max-width:100%!important;overflow-x:auto}
+.pagent-identity-mode [data-chat-flow-kind="assistant-step"][data-chat-group-part="response"] > [data-slot] > div:first-child [class*="_markdown"]{overflow-wrap:break-word}
+.pagent-guarded-math{white-space:normal;overflow-wrap:break-word}
 .pagent-identity-mode [data-chat-flow-kind="turn-trigger"]{display:flex;justify-content:center;padding:4px 0 2px}
 .pagent-identity-mode [data-chat-flow-kind="turn-trigger"] > [data-slot] > section{box-sizing:border-box;width:auto;max-width:min(700px,92%);padding:2px 10px;border:.5px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2)}
 .pagent-identity-mode [data-chat-flow-kind="turn-trigger"] [class*="_header"]{gap:6px;padding:2px 0}
@@ -799,6 +801,46 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
      */
     function messageOf(error) {
       return error instanceof Error ? error.message : String(error);
+    }
+
+    /** Han characters: prose never shows up inside a real formula's TeX. */
+    const CJK_IN_TEX = /[\u3400-\u9fff\uf900-\ufaff]/u;
+    /** Any TeX command: a formula almost always carries at least one. */
+    const TEX_COMMAND = /\\/u;
+
+    /**
+     * Recover the source text of a `$…$` pair that the markdown parsed as math
+     * even though the author wrote prose between the two dollar signs.
+     * @param tex - the annotation the math renderer kept.
+     * @returns the original `$…$` source, or undefined when it is real math.
+     */
+    function proseMathSource(tex) {
+      if (typeof tex !== 'string' || tex.length < 6) return undefined;
+      if (TEX_COMMAND.test(tex)) return undefined;
+      if (!CJK_IN_TEX.test(tex)) return undefined;
+      if (!/\s/u.test(tex.trim())) return undefined;
+      return `$${tex}$`;
+    }
+
+    /**
+     * Swap every prose-shaped math span inside one subtree back to plain text,
+     * so the sentence wraps again instead of being clipped by the column.
+     * @param node - subtree to walk.
+     * @returns how many spans were restored.
+     */
+    function guardProseMath(node) {
+      let fixed = 0;
+      for (const span of node.querySelectorAll('.katex')) {
+        const annotation = span.querySelector('annotation[encoding="application/x-tex"]');
+        const text = proseMathSource(annotation?.textContent ?? '');
+        if (text === undefined) continue;
+        const replacement = document.createElement('span');
+        replacement.className = 'pagent-guarded-math';
+        replacement.textContent = text;
+        span.replaceWith(replacement);
+        fixed += 1;
+      }
+      return fixed;
     }
 
     /**
@@ -4388,6 +4430,41 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
             root = null;
           };
         }, 'personal-agent: identity module above workspaces');
+
+        // The shipped markdown parses a `$…$` pair as inline math. A reply that
+        // quotes money — "$811.82 拿 18.5 单、ROAS 1.51、CPC $1.76" — therefore
+        // renders the sentence between the two dollar signs as one unbreakable
+        // math span: it is wider than the message column, cannot wrap inside,
+        // and the column's overflow clip cuts it instead of reflowing. Put the
+        // author's text back whenever the parsed TeX is plainly prose.
+        ctx.effect(() => {
+          let scheduled = false;
+          const pending = new Set();
+          const run = () => {
+            scheduled = false;
+            const roots = [...pending];
+            pending.clear();
+            for (const root of roots) if (root.isConnected) guardProseMath(root);
+          };
+          const scan = (node) => {
+            if (!(node instanceof Element)) return;
+            if (node.classList.contains('katex') || node.querySelector('.katex') === null) return;
+            pending.add(node);
+            if (!scheduled) {
+              scheduled = true;
+              requestAnimationFrame(run);
+            }
+          };
+          const observer = new MutationObserver((records) => {
+            for (const record of records) for (const node of record.addedNodes) scan(node);
+          });
+          guardProseMath(document.body);
+          observer.observe(document.body, { childList: true, subtree: true });
+          return () => {
+            observer.disconnect();
+            pending.clear();
+          };
+        }, 'personal-agent: keep prose out of the math renderer');
 
         // Keep the source selected until the exact new Session is available.
         // The next pass verifies that the new composer is open before sending
