@@ -7,7 +7,10 @@ import {
   dmPairKey,
   normalizeDirectMessage,
   renderDirectMessageHistory,
+  waitForReply,
+  describeCancelledWait,
   DM_MESSAGE_MAX,
+  WAIT_CANCELLED,
 } from '../lib/direct-message.js';
 
 const ADA = { id: 'ada', name: 'Ada', role: 'personal assistant' };
@@ -86,4 +89,35 @@ test('a continuing thread carries the recent exchange into the prompt', () => {
   assert.match(text, /- Mira: Yes, what do you need\?/);
   assert.doesNotMatch(text, /first direct message/);
   assert.match(text, /Summarize this note\./);
+});
+
+test('a reply that arrives settles the wait with the activation result', async () => {
+  const controller = new AbortController();
+  const result = new Promise((resolve) => setTimeout(() => resolve({ stopReason: 'completed' }), 5));
+  assert.deepEqual(await waitForReply(result, controller.signal), { stopReason: 'completed' });
+});
+
+test('a child that never finishes stops holding the caller once the wait is cancelled', async () => {
+  const controller = new AbortController();
+  const stuck = new Promise(() => {});
+  const waiting = waitForReply(stuck, controller.signal);
+  controller.abort(new Error('user stopped the turn'));
+  await assert.rejects(waiting, (error) => error.code === WAIT_CANCELLED);
+});
+
+test('an already-cancelled wait rejects without waiting for the child', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(waitForReply(new Promise(() => {}), controller.signal), (error) => error.code === WAIT_CANCELLED);
+});
+
+test('a cancelled wait explains timeout and stop differently', () => {
+  const timeout = new Error('timed out');
+  timeout.name = 'TimeoutError';
+  const message = describeCancelledWait({ name: 'Mira', reason: timeout, deadlineSeconds: 180 });
+  assert.match(message, /Mira/);
+  assert.match(message, /3 分钟/);
+  const stopped = describeCancelledWait({ name: 'Mira', reason: new Error('stop'), deadlineSeconds: 180 });
+  assert.match(stopped, /中止/);
+  assert.doesNotMatch(stopped, /3 分钟/);
 });

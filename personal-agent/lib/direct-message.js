@@ -127,3 +127,68 @@ export function composeDirectMessagePrompt({ caller, target, message, history = 
     `Reply to ${caller.name} as ${target.name}, directly and briefly, in your own voice. Answer what they asked. Do not speak for ${caller.name}, do not invent anyone else\u2019s reply, and do not start a new direct message from this reply. If only the user can answer something, say what you need from the user.`,
   ].join('\n');
 }
+/**
+ * How long one direct-message exchange may wait for the peer's reply. The
+ * deadline also covers the child's whole turn, so it is the ceiling on how long
+ * a caller's conversation can sit waiting on another identity.
+ */
+export const DM_WAIT_DEADLINE_MS = 180_000;
+
+/**
+ * A cancelled wait reports this code, so callers can tell a stalled peer from
+ * a real delivery failure.
+ */
+export const WAIT_CANCELLED = 'PA_WAIT_CANCELLED';
+
+/**
+ * Settle a subagent reply even when the child never finishes.
+ *
+ * A published activation's result promise is not tied to the cancellation
+ * signal: aborting that signal only prevents a child from being created. A
+ * child that stalls therefore holds the caller's turn open forever, and the
+ * conversation looks frozen with nothing on screen explaining why. Racing the
+ * result against the caller's signal keeps stop and the wait deadline
+ * effective.
+ *
+ * @param result - the activation result promise.
+ * @param signal - caller cancellation, already carrying any wait deadline.
+ * @returns the activation result.
+ */
+export function waitForReply(result, signal) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      const error = new Error('personal-agent: waiting for the reply was cancelled');
+      error.code = WAIT_CANCELLED;
+      reject(error);
+    };
+    const settle = (fn) => (value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      fn(value);
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    result.then(settle(resolve), settle(reject));
+  });
+}
+
+/**
+ * Describe a cancelled direct-message wait for the caller's model.
+ * @param options - peer name and the abort reason.
+ * @returns one sentence the caller can pass on.
+ */
+export function describeCancelledWait({ name, reason, deadlineSeconds }) {
+  const timedOut = reason !== null && typeof reason === 'object' && reason.name === 'TimeoutError';
+  if (timedOut) {
+    const minutes = Math.round(deadlineSeconds / 60);
+    return `${name} 没有在 ${minutes} 分钟内回复，这次等待已中止（对方可能正忙）。消息已记录，可以稍后再问一次。`;
+  }
+  return `${name} 的回复被中止了：等待已取消。`;
+}

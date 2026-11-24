@@ -35,9 +35,13 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   composeDirectMessagePrompt,
   composePeerSection,
+  describeCancelledWait,
   dmPairKey,
   normalizeDirectMessage,
+  waitForReply,
   DM_TRANSCRIPT_LIMIT,
+  DM_WAIT_DEADLINE_MS,
+  WAIT_CANCELLED,
 } from './lib/direct-message.js';
 import { conversationsToClear } from './lib/conversations.js';
 import {
@@ -1028,7 +1032,7 @@ export function apply(ctx, rawConfig) {
         message,
         history,
       });
-      const timeout = AbortSignal.timeout(180_000);
+      const timeout = AbortSignal.timeout(DM_WAIT_DEADLINE_MS);
       const signal = exec.signal == null ? timeout : AbortSignal.any([exec.signal, timeout]);
       const activation = await subagents.startActivation({
         provider: provider.name,
@@ -1052,7 +1056,21 @@ export function apply(ctx, rawConfig) {
         time: new Date().toISOString(),
       });
       try {
-        const result = await activation.result;
+        let result;
+        try {
+          result = await waitForReply(activation.result, signal);
+        } catch (error) {
+          if (error === null || typeof error !== 'object' || error.code !== WAIT_CANCELLED) throw error;
+          return {
+            identityId: target.identity.id,
+            name: target.identity.name,
+            text: describeCancelledWait({
+              name: target.identity.name,
+              reason: signal.reason,
+              deadlineSeconds: DM_WAIT_DEADLINE_MS / 1000,
+            }),
+          };
+        }
         const text = result.output
           .filter((block) => block.type === 'text')
           .map((block) => block.text)
