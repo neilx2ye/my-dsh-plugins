@@ -1336,6 +1336,19 @@ export function apply(ctx, config) {
     };
   }
 
+  // A configured public image server serves its links across restarts: start it
+  // with the plugin instead of waiting for the panel to ask for its state, and
+  // stop it when the plugin is unloaded.
+  ctx.effect(() => {
+    if (!cdnSettings.enabled) return () => {};
+    void startCdn().catch((error) => {
+      console.warn(`codex-images: public image server did not start: ${messageOf(error)}`);
+    });
+    return () => {
+      stopCdn();
+    };
+  }, 'codex-images: public image server');
+
   ctx.effect(
     () =>
       ctx.connection.fetch.register({

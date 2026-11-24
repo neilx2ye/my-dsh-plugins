@@ -120,6 +120,9 @@ All routes sit behind `ctx.connection.fetch` browser admission.
   port in your firewall and use a public IP, port mapping, or reverse proxy. **复制公网链接**
   only produces a link while public access is on: with the server off the detail view says
   so inline (and the button is dimmed) instead of silently copying nothing.
+  The server starts with the plugin when it is enabled, so its links keep working after a
+  restart, and a reverse proxy in front of it works too (`publicBaseUrl` is what the copied
+  link uses).
   A refused clipboard write (an `http://` page or a browser without the async clipboard) is
   reported as **复制失败**, never as silence.
 - The directory is the single source of truth: adding, replacing, or deleting an image
