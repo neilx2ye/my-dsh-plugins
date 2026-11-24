@@ -225,6 +225,7 @@ window.__ModuleLoader__.load({
       copyMarkdown: 'Copy Markdown',
       download: 'Download',
       copied: 'Copied to clipboard.',
+      copyFailed: 'Could not copy — the browser refused clipboard access.',
       created: 'Created',
       bytes: 'Bytes',
       openHint: 'Open preview',
@@ -356,6 +357,7 @@ window.__ModuleLoader__.load({
       copyMarkdown: '复制 Markdown',
       download: '下载',
       copied: '已复制到剪贴板。',
+      copyFailed: '复制失败：浏览器拒绝了剪贴板写入。',
       created: '创建时间',
       bytes: '字节',
       openHint: '打开预览',
@@ -939,16 +941,16 @@ window.__ModuleLoader__.load({
       };
 
       const copyRelative = async (image) => {
-        if (await copyText(image.relPath ?? '')) showNotice(t('copied'));
+        await copyWithFeedback(image.relPath ?? '');
       };
 
       const copyPath = async (image) => {
-        if (await copyText(image.path ?? '')) showNotice(t('copied'));
+        await copyWithFeedback(image.path ?? '');
       };
 
       const copyMarkdown = async (image) => {
         const label = String(image.name ?? 'codex image').replace(/[[\]]/g, '');
-        if (await copyText(`![${label}](${image.relPath ?? image.path ?? ''})`)) showNotice(t('copied'));
+        await copyWithFeedback(`![${label}](${image.relPath ?? image.path ?? ''})`);
       };
 
       const closeDetail = () => {
@@ -1275,10 +1277,20 @@ window.__ModuleLoader__.load({
           showNotice(t('cdnDisabledNotice'));
           return;
         }
-        if (await copyText(cdn.urlBase)) showNotice(t('copied'));
+        await copyWithFeedback(cdn.urlBase);
       };
 
       const publicLinkReady = cdn !== null && cdn.enabled === true && typeof cdn.urlBase === 'string' && cdn.urlBase !== '';
+
+      /** Copy one string and always say what happened. */
+      const copyWithFeedback = async (text) => {
+        if (await copyText(text)) {
+          showNotice(t('copied'));
+          return true;
+        }
+        showNotice(t('copyFailed'));
+        return false;
+      };
 
       const copyPublicLink = async (image) => {
         if (!publicLinkReady) {
@@ -1286,7 +1298,7 @@ window.__ModuleLoader__.load({
           return;
         }
         const relative = String(image.relPath ?? '').split('/').map(encodeURIComponent).join('/');
-        if (await copyText(`${cdn.urlBase}/${relative}`)) showNotice(t('copied'));
+        await copyWithFeedback(`${cdn.urlBase}/${relative}`);
       };
 
       const convertToReference = async (image) => {
