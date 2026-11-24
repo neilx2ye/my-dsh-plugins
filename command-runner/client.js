@@ -149,6 +149,7 @@ window.__ModuleLoader__.load({
       exitSignal: 'Signal {signal}',
       timeout: 'Timed out — the process was terminated',
       stopped: 'Stopped',
+      superseded: 'Stopped: a newer command replaced it',
       truncated: 'Output truncated',
       move: 'Drag to move · double-click to reset position',
       resize: 'Drag or use the arrow keys to resize the height',
@@ -180,6 +181,7 @@ window.__ModuleLoader__.load({
       exitSignal: '信号 {signal}',
       timeout: '已超时，进程已终止',
       stopped: '已停止',
+      superseded: '已停止：被新命令取代',
       truncated: '输出已截断',
       move: '拖动标题栏移动 · 双击复位',
       resize: '拖动或按方向键调整高度',
@@ -187,6 +189,13 @@ window.__ModuleLoader__.load({
 
     /** Window states keyed by Workspace (or by Session when ungrouped), kept outside React. */
     const stores = new Map();
+
+    /**
+     * The one command the window allows to run, across every Workspace store.
+     * A second run supersedes it instead of leaving the first one in the
+     * background, so what the window shows is what exists on the host.
+     */
+    const liveRuns = new Set();
 
     /** Last known floating-window geometry, remembered across reloads. */
     let savedGeometry = readSavedGeometry();
@@ -538,6 +547,7 @@ window.__ModuleLoader__.load({
         timedOut: false,
         truncated: false,
         stopped: false,
+        superseded: false,
         history: [],
         historyIndex: -1,
         lastCommand: '',
@@ -623,6 +633,9 @@ window.__ModuleLoader__.load({
               },
             });
             break;
+          case 'superseded':
+            patchTab(id, { superseded: true });
+            break;
           case 'error':
             patchTab(id, { error: typeof event.message === 'string' ? event.message : 'error' });
             break;
@@ -655,6 +668,19 @@ window.__ModuleLoader__.load({
         const abort = new AbortController();
         controllers.get(id)?.abort();
         controllers.set(id, abort);
+        // One command at a time: a new command stops whatever still runs,
+        // including a run started from another Workspace's window.
+        for (const other of [...liveRuns]) {
+          if (other.controller !== abort) other.supersede();
+        }
+        const live = {
+          controller: abort,
+          supersede: () => {
+            patchTab(id, { superseded: true });
+            abort.abort();
+          },
+        };
+        liveRuns.add(live);
         drafts.delete(id);
         patchTab(id, {
           running: true,
@@ -665,6 +691,7 @@ window.__ModuleLoader__.load({
           timedOut: false,
           truncated: false,
           stopped: false,
+          superseded: false,
           history,
           historyIndex: -1,
           lastCommand: command,
@@ -716,6 +743,7 @@ window.__ModuleLoader__.load({
         } catch (error) {
           if (!abort.signal.aborted) patchTab(id, { error: error instanceof Error ? error.message : String(error) });
         } finally {
+          liveRuns.delete(live);
           if (controllers.get(id) === abort) controllers.delete(id);
           patchTab(id, { running: false, stopped: abort.signal.aborted, runId: undefined });
         }
@@ -865,7 +893,7 @@ window.__ModuleLoader__.load({
           controllers.get(id)?.abort();
         },
         clear(id) {
-          patchTab(id, { output: '', partial: '', exit: undefined, error: '', timedOut: false, truncated: false, stopped: false });
+          patchTab(id, { output: '', partial: '', exit: undefined, error: '', timedOut: false, truncated: false, stopped: false, superseded: false });
         },
       };
     }
@@ -1101,7 +1129,7 @@ window.__ModuleLoader__.load({
       if (active.error !== '') notes.push(h('span', { key: 'error', className: 'crk-foot-note crk-bad' }, active.error));
       if (active.notice !== '') notes.push(h('span', { key: 'notice', className: 'crk-foot-note crk-bad' }, t(active.notice)));
       if (active.timedOut) notes.push(h('span', { key: 'timeout', className: 'crk-foot-note crk-bad' }, t('timeout')));
-      if (active.stopped) notes.push(h('span', { key: 'stopped', className: 'crk-foot-note' }, t('stopped')));
+      if (active.stopped) notes.push(h('span', { key: 'stopped', className: 'crk-foot-note' }, t(active.superseded ? 'superseded' : 'stopped')));
       if (active.truncated) notes.push(h('span', { key: 'truncated', className: 'crk-foot-note' }, t('truncated')));
       if (running) notes.push(h('span', { key: 'running', className: 'crk-foot-note' }, '…'));
       if (active.exit !== undefined) {

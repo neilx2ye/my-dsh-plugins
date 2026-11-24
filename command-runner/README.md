@@ -2,7 +2,10 @@
 
 A floating, tabbed command window for DSH Web that runs shell commands in **the
 current Workspace's registered directory** and streams their output back into
-their tab. Each tab is independent, so several commands can run at once.
+their tab. Tabs keep their own command, output, and history, but only **one
+command runs at a time**: starting a command stops whatever was still running —
+also a run started from another Workspace's window — and the stopped tab says
+`已停止：被新命令取代`. Nothing is left running behind a command you replaced.
 
 ## Use
 
@@ -13,8 +16,10 @@ their tab. Each tab is independent, so several commands can run at once.
    commands, `Esc` hides the window, `Stop` terminates the tab's process. Turn
    on the `交互` chip for commands that prompt for input.
 4. `+` opens another tab. Each tab has its own command, output, history, and
-   Stop button, and keeps running when you switch tabs or hide the window.
-   `×` closes a tab and terminates its process.
+   Stop button, and keeps running when you switch tabs or close the window.
+   Running a command in a second tab stops the first one. `×` closes a tab and
+   terminates its process; closing the whole window with `✕` leaves the current
+   command running.
 
 URLs printed by a command — `http`/`https`/`ftp`, `www.` hosts, and
 `localhost`/loopback ports — are rendered as links and open in a new tab.
@@ -53,7 +58,8 @@ required instead of silently dropping input.
 Type a command, then click the `☆` button next to the input to save it for the
 current project (the workspace directory). Saved commands appear in a `常用`
 bar under the tabs. Click a chip to run it: an idle active tab is reused, and
-when the active tab is busy the command starts in a new tab. The chip's `×`
+when the active tab is busy the command starts in a new tab and replaces the
+run that was still going. The chip's `×`
 removes it. Up to 24 commands are kept, and duplicates (or a command already in
 the list) cannot be saved again.
 

@@ -71,6 +71,12 @@ export function apply(ctx, config) {
   const settings = readSettings(config);
   /** Live interactive PTY handles keyed by the run id advertised in `start`. */
   const runs = new Map();
+  /**
+   * The one run this process allows at a time. A new command supersedes it
+   * instead of leaving the old child in the background, so the window always
+   * shows the only command that exists.
+   */
+  const slot = { current: null };
 
   ctx.effect(
     () =>
@@ -105,7 +111,7 @@ export function apply(ctx, config) {
         path: RUN_PATH,
         methods: ['POST'],
         requestBody: 'buffered',
-        fetch: (request) => runRoute(ctx, settings, request, runs),
+        fetch: (request) => runRoute(ctx, settings, request, runs, slot),
       }),
     'command-runner: run route',
   );
@@ -130,7 +136,7 @@ export function apply(ctx, config) {
  * @param request - admitted owner Fetch request.
  * @returns the event stream response, or a JSON failure before spawning.
  */
-async function runRoute(ctx, settings, request, runs) {
+async function runRoute(ctx, settings, request, runs, slot) {
   let body;
   try {
     body = await request.json();
@@ -188,6 +194,18 @@ async function runRoute(ctx, settings, request, runs) {
     } catch {}
   };
 
+  const record = {
+    /** End this run because a newer command took the slot. */
+    supersede: () => {
+      send({ type: 'superseded' });
+      abort.abort();
+      close();
+    },
+  };
+  const previous = slot.current;
+  slot.current = record;
+  previous?.supersede();
+
   if (request.signal.aborted) {
     close();
   } else {
@@ -202,7 +220,9 @@ async function runRoute(ctx, settings, request, runs) {
   }
 
   if (!interactiveRun) send({ type: 'start', cwd, command });
-  void execute({ ctx, settings, cwd, command, send, close, signal: abort.signal, interactive: interactiveRun, runId, runs });
+  void execute({ ctx, settings, cwd, command, send, close, signal: abort.signal, interactive: interactiveRun, runId, runs }).finally(() => {
+    if (slot.current === record) slot.current = null;
+  });
 
   return new Response(stream, {
     status: 200,
