@@ -522,7 +522,7 @@ DSH_HOME=/tmp/pa-check dsh --profile check --dump-config | grep -A4 'personal-ag
   as inline math, so a reply quoting prices (`$811.82 拿 18.5 单 … CPC $1.76`)
   rendered the sentence between the two dollar signs as one math span. Math
   does not wrap, so the sentence was clipped at the message column's edge when
-  the column was narrow. Since 0.6.3 the browser half restores the author's
+  the column was narrow. Since 0.6.4 the browser half restores the author's
   text whenever the parsed TeX carries no command and holds Han characters;
   real formulas (`\\frac`, `\\text{…}`, or any TeX at all) are untouched.
 - **Group replies are parallel, not streamed.** Every participant is prompted at

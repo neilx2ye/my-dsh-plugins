@@ -13,7 +13,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `mcp-settings/` | `@local/mcp-settings` | 0.1.1 | Manage MCP servers from DSH Web |
 | `user-switcher/` | `@local/user-switcher` | 0.2.2 | Linux: choose the account every Bash command runs as (`setpriv`), and open each account its own DSH instance with its own home |
 | `web-push-notify/` | `@local/web-push-notify` | 1.3.0 | Web Push task-completion notifications (Push API + Service Worker); notifies even while the page is in view, entry under **More** |
-| `personal-agent/` | `@local/personal-agent` | 0.6.3 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, selected multi-agent group chats, private direct messages between identities, and `/new` for a clean start that archives the identity's earlier conversations only after the new one is open; the `personal` preset is reserved for identity chats |
+| `personal-agent/` | `@local/personal-agent` | 0.6.4 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, selected multi-agent group chats, private direct messages between identities, and `/new` for a clean start that archives the identity's earlier conversations only after the new one is open; the `personal` preset is reserved for identity chats |
 | `system-usage/` | `@local/system-usage` | 1.1.0 | CPU, memory, and root-disk meter across the sidebar foot, with a hover readout and a click-to-refresh sample |
 | `workspace-upload/` | `@local/workspace-upload` | 0.3.0 | Upload files or whole folders into any workspace subfolder from the Files page, with live progress, replace/cancel prompts on name conflicts, and name-safe publishing |
 | `workspace-download/` | `@local/workspace-download` | 0.2.0 | Download a previewed file, any folder as ZIP (with an optional .git), or the whole workspace from the Files side panel, streamed by the Host |
@@ -28,25 +28,25 @@ need neither git nor registry credentials — only HTTPS.
 ## Install on a device
 
 Open DSH Web → **Plugins** → **Add plugin** and paste one tarball URL per plugin
-(replace `<owner>/<repo>` and `v0.16.0` with the release you want):
+(replace `<owner>/<repo>` and `v0.17.0` with the release you want):
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-dsh-artifacts-0.2.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-command-runner-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-codex-images-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-codex-login-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-model-quota-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-feishu-bridge-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-git-explorer-0.5.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-mcp-settings-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-user-switcher-0.2.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-personal-agent-0.6.3.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-system-usage-1.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-workspace-upload-0.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-workspace-download-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-article-studio-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-cache-cleaner-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-dsh-artifacts-0.2.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-command-runner-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-codex-images-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-codex-login-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-model-quota-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-feishu-bridge-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-git-explorer-0.5.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-mcp-settings-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-user-switcher-0.2.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-web-push-notify-1.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-personal-agent-0.6.4.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-system-usage-1.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-workspace-upload-0.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-workspace-download-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-article-studio-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-cache-cleaner-0.1.1.tgz
 ```
 
 After each install click **Enable now**, then restart `dsh web` when the profile has no HMR.
@@ -55,22 +55,22 @@ CLI equivalent:
 
 ```bash
 dsh plugin --profile web add \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-dsh-artifacts-0.2.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-command-runner-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-codex-images-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-codex-login-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-model-quota-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-feishu-bridge-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-git-explorer-0.5.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-mcp-settings-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-user-switcher-0.2.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-personal-agent-0.6.3.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-system-usage-1.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-workspace-upload-0.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-workspace-download-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-article-studio-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.16.0/local-cache-cleaner-0.1.1.tgz
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-dsh-artifacts-0.2.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-command-runner-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-codex-images-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-codex-login-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-model-quota-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-feishu-bridge-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-git-explorer-0.5.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-mcp-settings-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-user-switcher-0.2.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-web-push-notify-1.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-personal-agent-0.6.4.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-system-usage-1.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-workspace-upload-0.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-workspace-download-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-article-studio-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.17.0/local-cache-cleaner-0.1.1.tgz
 ```
 
 Installing only records the dependency. To load a bundle, click **Enable now**, or append its
@@ -116,7 +116,7 @@ bundle that differs from its directory here; `--apply` copies the package files 
   profile, the project UI remains the shipped one.
 - **Direct messages**: since 0.6.0 `message_identity` lets one identity send a private 1:1 message to another and get its reply in the same turn; the pair's thread is stored under `<profile>/personal-agent/dms/`, capped at 400 messages, and the tool is not available inside groups or project sessions.
 - **`/new` handoff**: since 0.6.2 `/new` in an identity chat creates the blank Session first and archives the identity's earlier conversations only after the browser has the new one open. A switch that never opens leaves the old history intact, and `/new` is not registered in project, group, or subagent conversations.
-- **Money vs. math**: since 0.6.3 the browser half puts quoted prose back when the shipped markdown read a `$…$` pair as inline math. A reply that writes `$811.82 拿 18.5 单 … CPC $1.76` used to render the sentence between the two dollar signs as one unbreakable math span — wider than the message column, clipped instead of wrapped. TeX that carries a command, or holds no Han text, is left alone.
+- **Money vs. math**: since 0.6.4 the browser half puts quoted prose back when the shipped markdown read a `$…$` pair as inline math. A reply that writes `$811.82 拿 18.5 单 … CPC $1.76` used to render the sentence between the two dollar signs as one unbreakable math span — wider than the message column, clipped instead of wrapped. TeX that carries a command, or holds no Han text, is left alone.
 - **Personal preset scope**: since 0.5.0 `@local/personal-agent` reserves the `personal`
   preset for identity and group homes. It is hidden from the preset roster and refused for
   workspace Sessions, which keep the profile's ordinary preset (`standard` by default).
@@ -134,7 +134,7 @@ bundle that differs from its directory here; `--apply` copies the package files 
 - **Feishu bridge**: `@local/feishu-bridge` needs a Feishu custom app with the bot capability and the message events above; it dials out to Feishu, so no public IP or callback URL is required. Credentials are entered in Settings.
 - **First push quirk**: pushing a brand-new branch and its first `v*` tag in one
   `git push` does not start the workflow. Push the branch first, then the tag
-  (`git push -u origin main` then `git push origin v0.16.0`), or re-push the tag alone.
+  (`git push -u origin main` then `git push origin v0.17.0`), or re-push the tag alone.
 
 ## Layout
 

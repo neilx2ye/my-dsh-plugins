@@ -815,10 +815,9 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
      * @returns the original `$…$` source, or undefined when it is real math.
      */
     function proseMathSource(tex) {
-      if (typeof tex !== 'string' || tex.length < 6) return undefined;
+      if (typeof tex !== 'string' || tex.length < 2) return undefined;
       if (TEX_COMMAND.test(tex)) return undefined;
       if (!CJK_IN_TEX.test(tex)) return undefined;
-      if (!/\s/u.test(tex.trim())) return undefined;
       return `$${tex}$`;
     }
 
