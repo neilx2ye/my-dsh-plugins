@@ -17,7 +17,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `system-usage/` | `@local/system-usage` | 1.1.0 | CPU, memory, and root-disk meter across the sidebar foot, with a hover readout and a click-to-refresh sample |
 | `workspace-upload/` | `@local/workspace-upload` | 0.3.0 | Upload files or whole folders into any workspace subfolder from the Files page, with live progress, replace/cancel prompts on name conflicts, and name-safe publishing |
 | `workspace-download/` | `@local/workspace-download` | 0.2.0 | Download a previewed file, any folder as ZIP (with an optional .git), or the whole workspace from the Files side panel, streamed by the Host |
-| `article-studio/` | `@local/article-studio` | 0.2.0 | A writing desk in the sidebar: articles with autosave and local git history, typography controls, inline images (upload, paste, drag) and a heading outline, and a writing partner summoned at the caret |
+| `article-studio/` | `@local/article-studio` | 0.3.0 | A writing desk in the sidebar: articles with autosave and local git history, typography controls, inline images that stay editable in place (click to select, Delete to remove with undo, **图片源码** for the Markdown), a heading outline, and a writing partner summoned at the caret |
 | `cache-cleaner/` | `@local/cache-cleaner` | 0.1.1 | Settings page that reports and clears **archived** session logs, their projection checkpoints, and canvas artifacts across every DSH home on the machine; unarchived and live sessions are never deleted |
 | `feishu-bridge/` | `@local/feishu-bridge` | 0.1.2 | Talk to the Harness from Feishu over a WebSocket long connection: one durable Session per chat, streamed replies, no public callback URL |
 
@@ -28,25 +28,25 @@ need neither git nor registry credentials — only HTTPS.
 ## Install on a device
 
 Open DSH Web → **Plugins** → **Add plugin** and paste one tarball URL per plugin
-(replace `<owner>/<repo>` and `v0.19.0` with the release you want):
+(replace `<owner>/<repo>` and `v0.20.0` with the release you want):
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-dsh-artifacts-0.2.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-command-runner-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-codex-images-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-codex-login-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-model-quota-0.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-feishu-bridge-0.1.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-git-explorer-0.5.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-mcp-settings-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-user-switcher-0.2.2.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-personal-agent-0.6.5.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-system-usage-1.1.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-workspace-upload-0.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-workspace-download-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-article-studio-0.2.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-cache-cleaner-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-dsh-artifacts-0.2.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-command-runner-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-codex-images-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-codex-login-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-model-quota-0.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-feishu-bridge-0.1.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-git-explorer-0.5.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-mcp-settings-0.1.1.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-user-switcher-0.2.2.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-web-push-notify-1.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-personal-agent-0.6.5.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-system-usage-1.1.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-workspace-upload-0.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-workspace-download-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-article-studio-0.3.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-cache-cleaner-0.1.1.tgz
 ```
 
 After each install click **Enable now**, then restart `dsh web` when the profile has no HMR.
@@ -55,22 +55,22 @@ CLI equivalent:
 
 ```bash
 dsh plugin --profile web add \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-dsh-artifacts-0.2.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-command-runner-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-codex-images-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-codex-login-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-model-quota-0.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-feishu-bridge-0.1.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-git-explorer-0.5.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-mcp-settings-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-user-switcher-0.2.2.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-personal-agent-0.6.5.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-system-usage-1.1.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-workspace-upload-0.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-workspace-download-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-article-studio-0.2.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.19.0/local-cache-cleaner-0.1.1.tgz
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-dsh-artifacts-0.2.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-command-runner-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-codex-images-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-codex-login-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-model-quota-0.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-feishu-bridge-0.1.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-git-explorer-0.5.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-mcp-settings-0.1.1.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-user-switcher-0.2.2.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-web-push-notify-1.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-personal-agent-0.6.5.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-system-usage-1.1.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-workspace-upload-0.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-workspace-download-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-article-studio-0.3.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.20.0/local-cache-cleaner-0.1.1.tgz
 ```
 
 Installing only records the dependency. To load a bundle, click **Enable now**, or append its
@@ -135,7 +135,7 @@ bundle that differs from its directory here; `--apply` copies the package files 
 - **Feishu bridge**: `@local/feishu-bridge` needs a Feishu custom app with the bot capability and the message events above; it dials out to Feishu, so no public IP or callback URL is required. Credentials are entered in Settings.
 - **First push quirk**: pushing a brand-new branch and its first `v*` tag in one
   `git push` does not start the workflow. Push the branch first, then the tag
-  (`git push -u origin main` then `git push origin v0.19.0`), or re-push the tag alone.
+  (`git push -u origin main` then `git push origin v0.20.0`), or re-push the tag alone.
 
 ## Layout
 

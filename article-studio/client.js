@@ -81,6 +81,11 @@ window.__ModuleLoader__.load({
       cancel: 'Cancel',
       confirmDelete: 'Delete',
       insertImage: 'Insert image',
+      imageSource: 'Image Markdown',
+      imageSourceHint: 'Show Markdown to edit image descriptions',
+      imageRemoved: 'Image removed from the draft.',
+      imageRestore: 'Undo removal',
+      imageSelect: 'Click to select the image',
       imageHelp: 'Choose an image, paste a screenshot, or drop an image into the draft.',
       dropImage: 'Drop to insert here',
       imageUploading: 'Uploading {current} / {total}…',
@@ -219,6 +224,11 @@ window.__ModuleLoader__.load({
       cancel: '取消',
       confirmDelete: '删除',
       insertImage: '插图',
+      imageSource: '图片源码',
+      imageSourceHint: '显示 Markdown，可修改图片替代文字',
+      imageRemoved: '已从正文移除图片。',
+      imageRestore: '撤销移除',
+      imageSelect: '点击选中图片',
       imageHelp: '选择图片、粘贴截图，或把图片拖进正文。',
       dropImage: '松开鼠标，在这里插图',
       imageUploading: '正在上传 {current} / {total}…',
@@ -543,12 +553,14 @@ window.__ModuleLoader__.load({
       return upload !== null && upload !== undefined && upload.id === articleId
     }
 
+    const imageUrl = (key) => `${API}image?key=${key}`
+
     function PreviewImage({ image, tr, block = false }) {
       const [failed, setFailed] = React.useState(false)
       const content = failed
         ? h('span', { className: 'as-image-missing', role: 'img', 'aria-label': [tr('imageMissing'), image.alt].filter(Boolean).join(': ') },
             tr('imageMissing'), image.alt ? ` · ${image.alt}` : '')
-        : h('img', { className: 'as-preview-image', src: `${API}image?key=${image.key}`, alt: image.alt,
+        : h('img', { className: 'as-preview-image', src: imageUrl(image.key), alt: image.alt,
             loading: 'lazy', decoding: 'async', onError: () => setFailed(true) })
       return block ? h('figure', { className: 'as-image-figure' }, content) : content
     }
@@ -649,7 +661,103 @@ window.__ModuleLoader__.load({
         if (setext) line += 1
         paragraph = false
       }
-      return { lines, headings, byLine, fences }
+      return { lines, offsets, headings, byLine, fences }
+    }
+
+    /** Atomic pictures retain their exact source and omit code examples. */
+    function editorImages(source) {
+      if (!source.includes('](media/')) return []
+      const { lines, offsets, fences } = markdownStructure(source)
+      const tokens = new RegExp('(`+)([^`\n]|`(?!`))*?\\1|' + IMAGE_MARKDOWN.source, 'gu')
+      const images = []
+      for (let line = 0; line < lines.length; line += 1) {
+        const fence = fences.get(line)
+        if (fence) { line = fence.end; continue }
+        const text = lines[line]
+        if (!text.includes('](media/') || /^(?: {4}|\t)/u.test(text)) continue
+        for (const match of text.matchAll(tokens)) {
+          const image = parseImage(match[0])
+          if (!image) continue
+          let escapes = 0
+          for (let i = match.index - 1; i >= 0 && text[i] === '\\'; i -= 1) escapes += 1
+          if (escapes % 2) continue
+          const start = offsets[line] + match.index
+          images.push({ start, end: start + match[0].length, source: match[0], image })
+        }
+      }
+      return images
+    }
+
+    function affectedImageRange(images, start, end, action) {
+      let first = null
+      let last = null
+      for (const image of images) {
+        const touches = start < end ? image.start < end && start < image.end
+          : action === 'backspace' ? image.start < start && start <= image.end
+          : action === 'delete' && image.start <= start && start < image.end
+        if (touches) {
+          first ??= image.start
+          last = image.end
+        }
+      }
+      return first === null ? null : [Math.min(start, first), Math.max(end, last)]
+    }
+
+    const EDITOR_IMAGE = '.as-editor-image'
+
+    /** The hidden text is the exact source; the visible image adds no textContent. */
+    function editorImageNode(piece, tr) {
+      const atom = document.createElement('span')
+      atom.className = 'as-editor-image'
+      atom.contentEditable = 'false'
+      atom.title = [piece.image.alt, tr('imageSelect')].filter(Boolean).join(' · ')
+      const source = document.createElement('span')
+      source.hidden = true
+      source.textContent = piece.source
+      const img = document.createElement('img')
+      img.className = 'as-preview-image'
+      img.alt = piece.image.alt
+      img.loading = 'lazy'
+      img.decoding = 'async'
+      img.draggable = false
+      img.addEventListener('error', () => {
+        img.hidden = true
+        const label = [tr('imageMissing'), piece.image.alt].filter(Boolean).join(' · ')
+        atom.dataset.missing = label
+        atom.setAttribute('role', 'img')
+        atom.setAttribute('aria-label', label)
+      }, { once: true })
+      img.src = imageUrl(piece.image.key)
+      atom.append(source, img)
+      return atom
+    }
+
+    /** Replace the DOM only if the text or picture projection changed. */
+    function syncEditorContents(editor, source, sourceMode, tr, preserveSelection) {
+      const expected = sourceMode ? [] : editorImages(source)
+      const atoms = Array.from(editor.querySelectorAll(EDITOR_IMAGE))
+      if (editor.textContent === source && atoms.length === expected.length && atoms.every((node, i) => node.textContent === expected[i].source)) return false
+      const selection = preserveSelection ? window.getSelection() : null
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+      const start = range && editor.contains(range.commonAncestorContainer) ? offsetOf(editor, range.startContainer, range.startOffset) : null
+      const end = start === null ? null : offsetOf(editor, range.endContainer, range.endOffset)
+      const fragment = document.createDocumentFragment()
+      let offset = 0
+      for (const piece of expected) {
+        if (piece.start > offset) fragment.append(source.slice(offset, piece.start))
+        fragment.append(editorImageNode(piece, tr))
+        offset = piece.end
+      }
+      if (offset < source.length) fragment.append(source.slice(offset))
+      editor.replaceChildren(fragment)
+      if (start !== null && end !== null) {
+        const next = caretAtOffset(editor, start)
+        const tail = caretAtOffset(editor, end)
+        next.setEnd(tail.endContainer, tail.endOffset)
+        selection.removeAllRanges()
+        selection.addRange(next)
+      }
+      return true
     }
 
     /** Render the Markdown body using the same headings and fences as the outline. */
@@ -851,7 +959,11 @@ window.__ModuleLoader__.load({
         const length = node.nodeValue?.length ?? 0
         if (remaining <= length) {
           const range = document.createRange()
-          range.setStart(node, remaining)
+          const atom = node.parentElement?.closest(EDITOR_IMAGE)
+          if (atom && root.contains(atom)) {
+            if (remaining === 0) range.setStartBefore(atom)
+            else range.setStartAfter(atom)
+          } else range.setStart(node, remaining)
           range.collapse(true)
           return range
         }
@@ -889,6 +1001,8 @@ window.__ModuleLoader__.load({
       return (index) => {
         const anchor = positions[index]
         if (!anchor || !anchor.node.isConnected || anchor.offset >= anchor.node.length) return undefined
+        const atom = anchor.node.parentElement?.closest(EDITOR_IMAGE)
+        if (atom) return atom.getBoundingClientRect().top
         const range = document.createRange()
         range.setStart(anchor.node, anchor.offset)
         const first = anchor.node.data.codePointAt(anchor.offset)
@@ -1089,6 +1203,11 @@ window.__ModuleLoader__.load({
 .as-prose .as-prose-para:last-child{margin-bottom:0}
 .as-image-figure{margin:1em 0;text-align:center}
 .as-preview-image{display:inline-block;max-inline-size:100%;block-size:auto;border-radius:6px;vertical-align:middle}
+.as-image-source[aria-pressed="true"]{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 13%, transparent)}
+.as-editor-image{display:inline-block;max-inline-size:100%;vertical-align:middle;cursor:pointer;border-radius:6px;line-height:0}
+.as-editor-image [hidden]{display:none!important}
+.as-editor-image[data-image-selected]{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}
+.as-editor-image[data-missing]::after{content:attr(data-missing);display:block;padding:9px 12px;border:1px solid var(--as-page-border);border-radius:6px;color:var(--as-page-muted);font-size:.8em;line-height:1.5;overflow-wrap:anywhere}
 .as-image-missing{display:inline-block;padding:6px 10px;color:var(--as-page-muted);border:1px solid var(--as-page-border);border-radius:6px;font-size:.8em;text-indent:0;overflow-wrap:anywhere}
 .as-prose blockquote{margin:0 0 var(--as-para-gap,12px);padding:10px 16px;border-left:3px solid var(--as-page-border);background:var(--as-page-quote);border-radius:0 8px 8px 0;color:var(--as-page-muted)}
 .as-prose blockquote p{margin:0;text-indent:0}
@@ -1265,6 +1384,8 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
       const [error, setError] = React.useState('')
       const [conflict, setConflict] = React.useState(null)
       const [preview, setPreview] = React.useState(false)
+      const [imageSourceMode, setImageSourceMode] = React.useState(false)
+      const imageSourceModeRef = React.useRef(false)
       const [imageTask, setImageTask] = React.useState(null)
       const [imageDrag, setImageDrag] = React.useState(false)
       const imageInputRef = React.useRef(null)
@@ -1396,27 +1517,17 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
         setStyle(value)
       }
 
-      /** Put text into the editable canvas without disturbing an ordinary caret. */
+      const projectEditor = (editor, value, preserveSelection) => {
+        if (!syncEditorContents(editor, value, imageSourceModeRef.current, tr, preserveSelection)) return
+        const selection = window.getSelection()
+        const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+        rangeRef.current = range && editor.contains(range.commonAncestorContainer) ? range.cloneRange() : null
+      }
+
       const writeEditor = (value, preserveCaret) => {
-        const editor = editorRef.current
         setTextValue(value)
-        if (editor === null) return
-        if (editor.textContent === value) return
-        let offset = null
-        if (preserveCaret && document.activeElement === editor) {
-          const selection = window.getSelection()
-          if (selection !== null && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0)
-            if (editor.contains(range.commonAncestorContainer)) offset = offsetOf(editor, range.startContainer, range.startOffset)
-          }
-        }
-        editor.textContent = value
-        if (offset !== null) {
-          const range = caretAtOffset(editor, offset)
-          const selection = window.getSelection()
-          selection?.removeAllRanges()
-          selection?.addRange(range)
-        }
+        const editor = editorRef.current
+        if (editor) projectEditor(editor, value, preserveCaret)
       }
 
       /** Adopt one server document as the current state. */
@@ -1427,6 +1538,10 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
         setDoc(article)
         setTitleValue(article.title)
         setStyleValue(article.style)
+        if (switching) {
+          imageSourceModeRef.current = false
+          setImageSourceMode(false)
+        }
         writeEditor(article.text, options.preserveCaret === true)
         setDirtyFlag(false)
         setStatus('saved')
@@ -1586,6 +1701,11 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
         const update = () => {
           const selection = window.getSelection()
           const range = selection?.rangeCount > 0 ? selection.getRangeAt(0) : null
+          const selectedImage = editorRef.current?.querySelector('[data-image-selected]')
+          if (selectedImage && (!range || range.collapsed || !range.intersectsNode(selectedImage) || range.toString() !== selectedImage.textContent)) {
+            selectedImage.removeAttribute('data-image-selected')
+          }
+          if (selectedImage?.hasAttribute('data-image-selected')) return setSelectionTip(null)
           const root = scrollRef.current
           const body = root?.querySelector('.as-text, .as-prose, .as-diff')
           if (!range || !body?.contains(range.commonAncestorContainer) || range.collapsed) return setSelectionTip(null)
@@ -1647,7 +1767,7 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
       React.useEffect(() => {
         if (preview) return
         const editor = editorRef.current
-        if (editor !== null && editor.textContent !== textRef.current) editor.textContent = textRef.current
+        if (editor) projectEditor(editor, textRef.current, true)
       }, [preview, doc?.id, doc?.rev, doc?.pendingChange === undefined ? '' : doc.pendingChange.at])
 
       // One poll covers the list, the open document, the transcript, and the
@@ -1754,15 +1874,25 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
         })
       }
 
-      const onEditorInput = () => {
+      const onEditorInput = (event) => {
         const editor = editorRef.current
         if (editor === null) return
+        const source = editor.textContent ?? ''
+        if (!event?.nativeEvent?.isComposing) projectEditor(editor, source, true)
         editSeq.current += 1
-        setTextValue(editor.textContent ?? '')
+        setTextValue(source)
         rememberSelection()
         setDirtyFlag(true)
         setStatus('unsaved')
         scheduleSave()
+      }
+
+      const toggleImageSource = () => {
+        const next = !imageSourceModeRef.current
+        imageSourceModeRef.current = next
+        setImageSourceMode(next)
+        const editor = editorRef.current
+        if (editor) projectEditor(editor, textRef.current, true)
       }
 
       const onTitleChange = (event) => {
@@ -2049,19 +2179,62 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
         selection.removeAllRanges()
         selection.addRange(range)
         if (replaceSelection) range.deleteContents()
-        const node = document.createTextNode(value)
-        range.insertNode(node)
-        const afterRange = document.createRange()
-        afterRange.setStartAfter(node)
-        afterRange.collapse(true)
+        if (value !== '') {
+          const node = document.createTextNode(value)
+          range.insertNode(node)
+          range.setStartAfter(node)
+        }
+        range.collapse(true)
         selection.removeAllRanges()
-        selection.addRange(afterRange)
-        rangeRef.current = afterRange.cloneRange()
-        editSeq.current += 1
-        setTextValue(editor.textContent ?? '')
-        setDirtyFlag(true)
-        setStatus('unsaved')
-        scheduleSave()
+        selection.addRange(range)
+        onEditorInput()
+        return true
+      }
+
+      const selectEditorImage = (event) => {
+        const atom = event.target.closest?.(EDITOR_IMAGE)
+        const editor = editorRef.current
+        if (!atom || !editor?.contains(atom)) return
+        const selection = window.getSelection()
+        if (!selection) return
+        editor.focus({ preventScroll: true })
+        const range = document.createRange()
+        range.selectNode(atom)
+        selection.removeAllRanges()
+        selection.addRange(range)
+        editor.querySelector('[data-image-selected]')?.removeAttribute('data-image-selected')
+        atom.setAttribute('data-image-selected', '')
+        rangeRef.current = range.cloneRange()
+      }
+
+      /** Keep image references exact on copy; delete only whole image atoms. */
+      const imageSelectionAction = (event, action) => {
+        const editor = editorRef.current
+        const selection = window.getSelection()
+        if (!editor || imageSourceModeRef.current || !selection?.rangeCount || !editor.querySelector(EDITOR_IMAGE)) return false
+        const range = selection.getRangeAt(0)
+        if (!editor.contains(range.commonAncestorContainer)) return false
+        const start = offsetOf(editor, range.startContainer, range.startOffset)
+        const end = offsetOf(editor, range.endContainer, range.endOffset)
+        if (start === null || end === null) return false
+        const source = editor.textContent ?? ''
+        const affected = affectedImageRange(editorImages(source), start, end, action)
+        if (!affected) return false
+        const [from, to] = affected
+        if (action === 'copy' || action === 'cut') {
+          if (!event.clipboardData) return false
+          event.clipboardData.setData('text/plain', source.slice(from, to))
+        }
+        event.preventDefault()
+        if (action === 'copy') return true
+        // Rebuild from the exact source. A DOM Range across hidden text must
+        // not leave an empty image wrapper behind after deleting its token.
+        writeEditor(source.slice(0, from) + source.slice(to), false)
+        const caret = caretAtOffset(editor, from)
+        selection.removeAllRanges()
+        selection.addRange(caret)
+        onEditorInput()
+        if (uploadRef.current === null) setImageTask({ kind: 'removed', before: source, after: textRef.current, offset: from })
         return true
       }
 
@@ -2097,7 +2270,7 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
       }
 
       const undoImageInsertion = () => {
-        if (imageTask?.kind !== 'added' || textRef.current !== imageTask.after || !editorRef.current || docRef.current?.pendingChange || conflictRef.current) return
+        if ((imageTask?.kind !== 'added' && imageTask?.kind !== 'removed') || textRef.current !== imageTask.after || !editorRef.current || docRef.current?.pendingChange || conflictRef.current) return
         writeEditor(imageTask.before, false)
         const editor = editorRef.current
         editor.focus()
@@ -2154,6 +2327,7 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
       }
 
       const canInsertImage = doc !== null && !preview && !doc.pendingChange && conflict === null
+      const canToggleImageSource = !preview && !doc?.pendingChange && (imageSourceMode || IMAGE_MARKDOWN.test(text))
       const hasDraggedImage = (transfer) => Array.from(transfer?.items ?? []).some((item) => item.kind === 'file' && (!item.type || item.type.startsWith('image/')))
       const transferFiles = (transfer) => {
         const files = Array.from(transfer?.files ?? [])
@@ -2455,6 +2629,10 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
                         if (imageAnchorRef.current) imageInputRef.current?.click()
                       },
                     }, h(Icon, { name: 'picture', size: 14 }), tr('insertImage')) : null,
+                    canToggleImageSource ? h('button', {
+                      type: 'button', className: 'as-btn as-btn-compact as-image-source',
+                      'aria-pressed': imageSourceMode, title: tr('imageSourceHint'), onClick: toggleImageSource,
+                    }, tr('imageSource')) : null,
                     h('input', {
                       ref: imageInputRef, type: 'file', hidden: true, multiple: true,
                       accept: 'image/png,image/jpeg,image/webp,image/gif',
@@ -2494,13 +2672,13 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
                   ),
                   imageTask !== null ? h('div', { className: 'as-image-notice', 'data-kind': imageTask.kind },
                     h('span', { role: imageTask.kind === 'error' ? 'alert' : 'status' },
-                      tr(imageTask.kind === 'error' ? imageTask.reason : imageTask.kind === 'added' ? 'imageAdded' : imageTask.kind === 'ready' ? 'imageMoved' : 'imageUploading', imageTask)),
+                      tr(imageTask.kind === 'error' ? imageTask.reason : imageTask.kind === 'added' ? 'imageAdded' : imageTask.kind === 'removed' ? 'imageRemoved' : imageTask.kind === 'ready' ? 'imageMoved' : 'imageUploading', imageTask)),
                     imageTask.kind === 'added' && !preview ? h('button', {
                       type: 'button', className: 'as-btn as-btn-compact', onClick: () => setPreview(true),
                     }, tr('imagePreview')) : null,
-                    imageTask.kind === 'added' && text === imageTask.after && canInsertImage ? h('button', {
+                    (imageTask.kind === 'added' || imageTask.kind === 'removed') && text === imageTask.after && canInsertImage ? h('button', {
                       type: 'button', className: 'as-btn as-btn-compact', onClick: undoImageInsertion,
-                    }, tr('imageUndo')) : null,
+                    }, tr(imageTask.kind === 'removed' ? 'imageRestore' : 'imageUndo')) : null,
                     imageTask.kind === 'ready' && canInsertImage ? h('button', {
                       type: 'button', className: 'as-btn as-btn-compact', onClick: () => placeImages(imageTask.images, imageTarget()),
                     }, tr('imagePlace')) : null,
@@ -2602,6 +2780,9 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
                             'data-image-drag': imageDrag,
                             'data-image-drop-hint': tr('dropImage'),
                             onInput: onEditorInput,
+                            onClick: selectEditorImage,
+                            onCopy: (event) => imageSelectionAction(event, 'copy'),
+                            onCut: (event) => imageSelectionAction(event, 'cut'),
                             onKeyUp: rememberSelection,
                             onMouseUp: rememberSelection,
                             onBlur: () => {
@@ -2644,6 +2825,10 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
                                 event.stopPropagation()
                                 openAgent(selectionTip, event.currentTarget)
                                 return
+                              }
+                              if (!primary && !event.altKey && !event.isComposing && !event.nativeEvent?.isComposing && event.keyCode !== 229) {
+                                if (event.key === 'Backspace' && imageSelectionAction(event, 'backspace')) return
+                                if (event.key === 'Delete' && imageSelectionAction(event, 'delete')) return
                               }
                               if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
                                 event.preventDefault()
@@ -3241,7 +3426,7 @@ body[data-ds-dark-theme] .as-seg-btn[data-active="true"]{background:color-mix(in
       inject: ['slots', 'locale'],
       /** Pure review-diff helpers, exported for the node test suite. */
       __diff: { diffSegments, diffStatsOf, tokenizeText, reviewGroups },
-      __images: { imageBlock, parseImage, uploadBelongsTo },
+      __images: { imageBlock, parseImage, uploadBelongsTo, editorImages, affectedImageRange },
       __outline: { markdownStructure, headingAt },
       apply(ctx) {
         const translate = ctx.locale.bind(NS)

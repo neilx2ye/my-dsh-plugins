@@ -245,3 +245,38 @@ test('document outline uses Markdown levels and source offsets without including
   assert.equal(headingAt(headings, topAt, 299), headings[2].offset)
   assert.equal(headingAt(headings, topAt, 900), headings[5].offset)
 })
+
+
+test('editing existing pictures keeps exact Markdown offsets and treats each image atomically', () => {
+  const { definition } = loadBundle()
+  const plugin = definition.factory((name) => name === 'react' ? { createElement: () => null } : { createPortal: () => null })
+  const { editorImages, affectedImageRange } = plugin.__images
+  const key = `${'a'.repeat(64)}.png`
+  const picture = `![有\\[说明\\]](media/${key})`
+  const inline = `![](media/${key})`
+  const intro = '# 前文🖋️\r\n\r\n'
+  const source = [intro + picture, '', `前字${inline}后字`, '', '```md', picture, '```',
+    `光标 \\${picture}`, `\`${picture}\``, `\`\` 示例 \` ${inline} \`\``, `    ${picture}`,
+    '![远程](https://example.org/image.png)', '## 后文'].join('\r\n')
+  const list = editorImages(source)
+  assert.equal(list.length, 2)
+  const [first, second] = list
+  assert.equal(first.start, intro.length)
+  assert.equal(first.image.alt, '有[说明]')
+  assert.equal(first.source, picture)
+  assert.equal(source.slice(second.start, second.end), inline)
+
+  const removed = (start, end, action) => {
+    const result = affectedImageRange(list, start, end, action)
+    return result ? source.slice(...result) : null
+  }
+  assert.equal(removed(first.start, first.start, 'delete'), picture)
+  assert.equal(removed(first.end, first.end, 'backspace'), picture)
+  assert.equal(removed(first.start, first.start, 'backspace'), null)
+  assert.equal(removed(first.end, first.end, 'delete'), null)
+  assert.equal(removed(first.start + 1, first.end - 1, 'copy'), picture)
+  const afterCut = source.slice(0, second.start) + source.slice(second.end)
+  assert.ok(afterCut.includes('前字后字'))
+  assert.equal(editorImages(afterCut).length, 1)
+  assert.equal(removed(second.start - 1, second.end + 1, 'cut'), `字${inline}后`)
+})

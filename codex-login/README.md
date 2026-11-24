@@ -36,7 +36,7 @@ pi-ai 的 Codex 登录会先问「浏览器回调 / 设备码」；Host 直接�
 
 ```bash
 dsh plugin --profile web add \
-  https://github.com/neilx2ye/my-dsh-plugins/releases/download/v0.15.0/local-codex-login-0.1.0.tgz
+  https://github.com/neilx2ye/my-dsh-plugins/releases/download/v0.20.0/local-codex-login-0.1.0.tgz
 ```
 
 也可以把本目录作为本地 bundle 装进 profile（插件页「添加插件」选目录）。

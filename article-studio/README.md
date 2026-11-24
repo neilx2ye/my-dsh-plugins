@@ -19,8 +19,10 @@ column: the agent conversation is collapsed away, and you summon it at the caret
   unsaved text; the panel asks which version to keep).
 - **Images** — use **插图** in the edit toolbar, paste a screenshot, or drag an
   image onto the draft. PNG, JPEG, WebP and GIF are supported, up to 8 MiB each.
-  Edit the label between `![` and `]` to change the alternative text. **预览** shows
-  the image at the article's column width. Picture files live in the profile's
+  Images appear in place while editing. Click one to select it; press Delete or
+  Backspace to remove it from the draft, with an undo action. Use **图片源码** to
+  edit the alternative text between `![` and `]`. Both editing and **预览** fit
+  pictures to the article column. Picture files live in the profile's
   `article-studio/media/` directory, and git snapshots include referenced images
   alongside the Markdown mirror. External publish targets receive the Markdown,
   not the local image bytes; upload the `media/` folder separately when needed.
