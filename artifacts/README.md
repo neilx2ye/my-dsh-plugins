@@ -144,9 +144,10 @@ dsh plugin --profile web add https://example.com/local-dsh-artifacts-0.1.0.tgz
 ## Limitations
 
 - One canvas per chat: opening another artifact navigates the same tab instead
-  of stacking a second one. The tab keeps up to 12 visited artifacts in a
-  back/forward history and remembers its subject across reloads in
-  `localStorage`.
+  of stacking a second one, and an open canvas switches to whatever you click
+  last — a card's *Open canvas*, a gallery tile, or a history entry, from
+  either pane. The tab keeps up to 12 visited artifacts in a back/forward
+  history and remembers its subject across reloads in `localStorage`.
 - The inline expanded card follows the artifact's own ratio for HTML and SVG
   (16:9) and uses `clamp(360px, 52vh, 560px)` for charts, Markdown, and code;
   it is not a resizable split. Fullscreen uses the native Fullscreen API, so no

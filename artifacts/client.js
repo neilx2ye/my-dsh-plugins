@@ -644,6 +644,72 @@ window.__ModuleLoader__.load({
       },
     };
 
+    /**
+     * Session-scoped "show this artifact" requests.
+     *
+     * A page tab is unique per pane, so opening this kind again only reveals the
+     * canvas that is already there: the layout keeps its one record, and a
+     * mounted body cannot be remounted to re-read an opener's parameters. This
+     * channel is how an open still lands on an open canvas — the opener
+     * announces the artifact, every mounted canvas of that session switches to
+     * it, and a canvas that mounts later adopts the newest request it has not
+     * seen yet.
+     */
+    const shows = {
+      seq: 0,
+      latest: new Map(),
+      seen: new Map(),
+      listeners: new Map(),
+      /**
+       * Announce that one artifact is the one to show.
+       * @param sessionId - owning chat.
+       * @param id - artifact id.
+       */
+      request(sessionId, id) {
+        if (typeof sessionId !== 'string' || sessionId === '' || typeof id !== 'string' || id === '') return;
+        this.seq += 1;
+        const request = { id, seq: this.seq };
+        this.latest.set(sessionId, request);
+        const set = this.listeners.get(sessionId);
+        if (set === undefined) return;
+        for (const listener of [...set]) {
+          try {
+            listener(request);
+          } catch {}
+        }
+      },
+      /**
+       * Follow a session's requests from one surface.
+       *
+       * The surface adopts the newest request it has not seen yet, then every
+       * later one; its own `key` keeps two surfaces of one tab independent.
+       * @param sessionId - owning chat.
+       * @param key - identity of the subscribing surface.
+       * @param listener - receives `{ id, seq }`.
+       * @returns unsubscribe.
+       */
+      watch(sessionId, key, listener) {
+        if (typeof sessionId !== 'string' || sessionId === '' || typeof listener !== 'function') return () => {};
+        const seen = Math.max(this.seen.get(key) ?? 0, 0);
+        const deliver = (request) => {
+          if (request.seq > (this.seen.get(key) ?? 0)) this.seen.set(key, request.seq);
+          listener(request);
+        };
+        let set = this.listeners.get(sessionId);
+        if (set === undefined) {
+          set = new Set();
+          this.listeners.set(sessionId, set);
+        }
+        set.add(deliver);
+        const latest = this.latest.get(sessionId);
+        if (latest !== undefined && latest.seq > seen) deliver(latest);
+        return () => {
+          set.delete(deliver);
+          if (set.size === 0) this.listeners.delete(sessionId);
+        };
+      },
+    };
+
     /** Gallery component filled in by `apply`; the canvas falls back to it. */
     let GalleryComponent = null;
 
@@ -1587,6 +1653,9 @@ try {
     function openArtifact(ctx, sessionId, id) {
       if (typeof id !== 'string' || id === '') return;
       ctx.sidebarRight.openTab(ARTIFACT_KIND, { params: { artifact: id } });
+      // The kind is a page, so an open that finds the canvas already there only
+      // reveals it; the announcement is what switches the artifact it shows.
+      shows.request(sessionId, id);
     }
 
     /**
@@ -1871,7 +1940,28 @@ try {
         () => (paramId !== '' ? paramId : lastArtifactFor(sessionId, tabId)),
         [paramId, sessionId, tabId],
       );
-      const id = remembered;
+      /**
+       * Artifact a later open asked this tab to show.
+       *
+       * Opening this page kind again keeps the one tab and leaves its navigation
+       * parameters as they were, so a click on another artifact arrives as a
+       * show request instead and is held here.
+       */
+      const [pushed, setPushed] = React.useState('');
+      const id = pushed !== '' ? pushed : remembered;
+      /** Last navigation parameter read, so only a real navigation outranks `pushed`. */
+      const lastParam = React.useRef(paramId);
+
+      React.useEffect(
+        () => shows.watch(sessionId, `${sessionId}:${tabId}:body`, (request) => setPushed(request.id)),
+        [sessionId, tabId],
+      );
+
+      React.useEffect(() => {
+        if (paramId === lastParam.current) return;
+        lastParam.current = paramId;
+        setPushed('');
+      }, [paramId]);
 
       const [selected, setSelected] = React.useState(undefined);
       const [mode, setMode] = React.useState('preview');
@@ -1903,25 +1993,25 @@ try {
       }, [id]);
 
       React.useEffect(() => {
-        if (paramId !== '') rememberArtifact(sessionId, tabId, paramId);
-      }, [paramId, sessionId, tabId]);
+        if (id !== '') rememberArtifact(sessionId, tabId, id);
+      }, [id, sessionId, tabId]);
 
       React.useEffect(() => {
         setShowVersions(false);
       }, [id]);
 
       React.useEffect(() => {
-        if (paramId === '') return;
+        if (id === '') return;
         const prev = historyRef.current;
-        const title = bus.titles.get(paramId) ?? '';
+        const title = bus.titles.get(id) ?? '';
         let next = prev;
         if (jumpIndex.current >= 0) {
           const target = jumpIndex.current;
           jumpIndex.current = -1;
-          if (prev.entries[target] !== undefined && prev.entries[target].id === paramId) {
+          if (prev.entries[target] !== undefined && prev.entries[target].id === id) {
             next = { ...prev, index: target };
           }
-        } else if (prev.entries[prev.index] !== undefined && prev.entries[prev.index].id === paramId) {
+        } else if (prev.entries[prev.index] !== undefined && prev.entries[prev.index].id === id) {
           if (title !== '' && prev.entries[prev.index].title !== title) {
             next = {
               ...prev,
@@ -1929,14 +2019,14 @@ try {
             };
           }
         } else {
-          const seen = prev.entries.findIndex((entry) => entry.id === paramId);
+          const seen = prev.entries.findIndex((entry) => entry.id === id);
           if (seen >= 0) {
             next = {
               entries: prev.entries.map((entry, index) => (index === seen && title !== '' ? { ...entry, title } : entry)),
               index: seen,
             };
           } else {
-            const entries = [...prev.entries.slice(0, prev.index + 1), { id: paramId, title }].slice(-MAX_HISTORY);
+            const entries = [...prev.entries.slice(0, prev.index + 1), { id, title }].slice(-MAX_HISTORY);
             next = { entries, index: entries.length - 1 };
           }
         }
@@ -1944,7 +2034,7 @@ try {
         historyRef.current = next;
         setHistory(next);
         writeHistory(sessionId, tabId, next);
-      }, [paramId, sessionId, tabId]);
+      }, [id, sessionId, tabId]);
 
       React.useEffect(() => {
         if (artifact === undefined) return;
@@ -1966,13 +2056,11 @@ try {
           if (index < 0 || index >= current.entries.length || index === current.index) return;
           const entry = current.entries[index];
           jumpIndex.current = index;
-          try {
-            info?.tab?.actions?.openTab(ARTIFACT_KIND, { params: { artifact: entry.id } });
-          } catch {
-            jumpIndex.current = -1;
-          }
+          // Switching the subject is this tab's own move: nothing is opened, so
+          // the request only tells every canvas of the session what to show.
+          shows.request(sessionId, entry.id);
         },
-        [info],
+        [sessionId],
       );
 
       React.useEffect(() => {
@@ -2411,9 +2499,23 @@ try {
       const params = info?.tab?.navigation?.params;
       const tabId = info?.tab?.id;
       const paramId = typeof params?.artifact === 'string' ? params.artifact : '';
-      const id = paramId !== '' ? paramId : lastArtifactFor(sessionId, tabId);
+      /** Same switch the canvas follows, kept separately so the chip renames too. */
+      const [pushed, setPushed] = React.useState('');
+      const remembered = paramId !== '' ? paramId : lastArtifactFor(sessionId, tabId);
+      const id = pushed !== '' ? pushed : remembered;
       const [, force] = React.useState(0);
       const meta = useArtifactMeta(sessionId, id);
+
+      React.useEffect(
+        () => shows.watch(sessionId, `${sessionId}:${tabId}:title`, (request) => setPushed(request.id)),
+        [sessionId, tabId],
+      );
+
+      React.useEffect(() => {
+        if (paramId === '') return;
+        if (paramId === pushed) return;
+        setPushed('');
+      }, [paramId]);
 
       React.useEffect(() => {
         if (id === '') return undefined;
