@@ -105,6 +105,9 @@ window.__ModuleLoader__.load({
 .cxi-detail-body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px;background:var(--dsw-alias-bg-base);overflow:hidden}
 .cxi-detail-image{display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;background:var(--dsw-alias-bg-layer-2)}
 .cxi-detail-foot{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 12px 11px;border-top:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-layer-2)}
+.cxi-detail-status{margin:0;font-size:11.5px;line-height:1.5;overflow-wrap:anywhere}
+.cxi-detail-status.cxi-bad{color:var(--dsw-alias-state-error-primary,#f85149)}
+.cxi-btn[aria-disabled="true"]{color:var(--dsw-alias-label-tertiary,#8b9098)}
 .cxi-detail-meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 .cxi-detail-prompt{margin:0;max-height:44px;overflow:auto;color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:1.5}
 .cxi-actions{display:flex;flex-wrap:wrap;gap:6px}
@@ -268,6 +271,7 @@ window.__ModuleLoader__.load({
       cdnNoPublicIp: 'No public IPv4 detected; port mapping or a reverse proxy may be required.',
       cdnTokenHint: 'Anyone with the link can read these images.',
       cdnDisabledNotice: 'Public access is off.',
+      cdnNeedEnabled: 'Public access is off — turn it on under Settings → Public access (CDN), then copy the link again.',
       copyPublicLink: 'Copy public link',
       account: 'Codex account',
       accountTitle: 'Codex account',
@@ -398,6 +402,7 @@ window.__ModuleLoader__.load({
       cdnNoPublicIp: '未检测到公网 IPv4，可能需要端口映射或反向代理。',
       cdnTokenHint: '拿到链接的人都能读取这些图片。',
       cdnDisabledNotice: '公网访问未开启。',
+      cdnNeedEnabled: '公网访问未开启：先在「设置 → 公网访问（CDN）」里打开，再复制链接。',
       copyPublicLink: '复制公网链接',
       account: 'Codex 账户',
       accountTitle: 'Codex 账户',
@@ -1273,9 +1278,11 @@ window.__ModuleLoader__.load({
         if (await copyText(cdn.urlBase)) showNotice(t('copied'));
       };
 
+      const publicLinkReady = cdn !== null && cdn.enabled === true && typeof cdn.urlBase === 'string' && cdn.urlBase !== '';
+
       const copyPublicLink = async (image) => {
-        if (cdn === null || cdn.enabled !== true || typeof cdn.urlBase !== 'string' || cdn.urlBase === '') {
-          showNotice(t('cdnDisabledNotice'));
+        if (!publicLinkReady) {
+          showNotice(t('cdnNeedEnabled'));
           return;
         }
         const relative = String(image.relPath ?? '').split('/').map(encodeURIComponent).join('/');
@@ -1680,6 +1687,13 @@ window.__ModuleLoader__.load({
               }),
             ),
             h('div', { key: 'foot', className: 'cxi-detail-foot' }, [
+              error !== '' || notice !== ''
+                ? h('p', {
+                    key: 'status',
+                    className: error !== '' ? 'cxi-detail-status cxi-bad' : 'cxi-detail-status',
+                    role: error !== '' ? 'alert' : 'status',
+                  }, error !== '' ? error : notice)
+                : null,
               h('div', { key: 'meta', className: 'cxi-detail-meta', title: selected.path }, [
                 h('span', { key: 'rel' }, selected.relPath ?? ''),
                 h('span', { key: 'time' }, `${t('created')}: ${formatTime(selected.createdAt)}`),
@@ -1717,7 +1731,14 @@ window.__ModuleLoader__.load({
                 h('button', { key: 'copy-rel', type: 'button', className: 'cxi-btn', onClick: () => void copyRelative(selected) }, t('copyRelative')),
                 h('button', { key: 'copy-md', type: 'button', className: 'cxi-btn', onClick: () => void copyMarkdown(selected) }, t('copyMarkdown')),
                 h('button', { key: 'copy-path', type: 'button', className: 'cxi-btn', onClick: () => void copyPath(selected) }, t('copyPath')),
-                h('button', { key: 'copy-cdn', type: 'button', className: 'cxi-btn', onClick: () => void copyPublicLink(selected) }, t('copyPublicLink')),
+                h('button', {
+                  key: 'copy-cdn',
+                  type: 'button',
+                  className: 'cxi-btn',
+                  'aria-disabled': publicLinkReady ? 'false' : 'true',
+                  title: publicLinkReady ? undefined : t('cdnNeedEnabled'),
+                  onClick: () => void copyPublicLink(selected),
+                }, t('copyPublicLink')),
                 h('button', {
                   key: 'reference',
                   type: 'button',
