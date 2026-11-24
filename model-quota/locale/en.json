@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Model quota meter",
+    "description": "Shows how much of the ChatGPT / Codex subscription is left in each limit window, as one pill beside the token-usage pills under the composer. The Host reads the quota from the same endpoint the Codex client uses, using the OAuth grant the openai-codex route already stores; the page receives percentages, reset countdowns and the plan name, never the token. The pill turns amber below 20% and red when the limit is reached, and clicking it re-reads immediately. Routes without a published quota, such as the Aliyun MaaS gateway, show nothing."
+  }
+}

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -432,7 +433,83 @@ test('Agent edits leave review marks that can be kept or undone', async () => {
   const again = await host.call('/read', { id })
   assert.equal(again.body.article.pendingChange.before, kept.body.article.text)
 
-  const undone = await host.call('/undo', { id })
+  for (const route of ['/accept', '/undo']) {
+    const stale = await host.call(route, { id, rev: marked.body.article.rev })
+    assert.equal(stale.status, 409)
+    assert.equal(stale.body.article.text, '整篇重写。')
+    assert.ok(stale.body.article.pendingChange)
+  }
+  const undone = await host.call('/undo', { id, rev: again.body.article.rev })
   assert.equal(undone.body.article.text, kept.body.article.text)
   assert.equal(undone.body.article.pendingChange, undefined)
+})
+
+test('the first Agent draft is a visible addition and can be undone to a blank body', async () => {
+  const host = createHost({ fireOnCreate: true })
+  apply(host.ctx, { dataDir: join(root, 'blank-review'), agentPreset: 'scribe' })
+  const { body: { article } } = await host.call('/create', { title: '空白稿' })
+  const { id } = article
+  const asked = await host.call('/ask', { id, instruction: '写个开头' })
+  const update = host.tools.find((tool) => tool.name === 'article_update')
+  await update.execute({ text: '这是一个开头。' }, { agent: { id: asked.body.sessionId } })
+  const marked = (await host.call('/read', { id })).body.article
+  assert.equal(marked.pendingChange.before, '')
+  assert.equal(marked.text, '这是一个开头。')
+  const undone = await host.call('/undo', { id, rev: marked.rev })
+  assert.equal(undone.body.article.text, '')
+  assert.equal(undone.body.article.pendingChange, undefined)
+})
+
+
+test('image routes validate uploads and retain pictures in Git-backed versions', async () => {
+  const host = createHost()
+  const dataDir = join(root, 'images')
+  apply(host.ctx, { dataDir, agentPreset: 'scribe', gitCommitDelayMs: 60_000 })
+  const { body: { article } } = await host.call('/create', { title: '图文稿', text: '第一段。' })
+  const { id, rev } = article
+  const prefix = 'http://localhost/api/article-studio'
+  const upload = host.routes.get('/api/article-studio/image-upload')
+  const read = host.routes.get('/api/article-studio/image')
+  assert.deepEqual(upload.methods, ['POST'])
+  assert.equal(upload.requestBody, 'streaming')
+  assert.deepEqual(read.methods, ['GET'])
+  const send = (body, options = {}) => upload.fetch(new Request(`${prefix}/image-upload?article=${options.id ?? id}`, {
+    method: 'POST', headers: { 'content-type': 'application/octet-stream', ...options.headers }, body, duplex: 'half',
+  }))
+  const view = (key) => read.fetch(new Request(`${prefix}/image?key=${encodeURIComponent(key)}`))
+  // One real PNG, small enough to compare byte-for-byte.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/f1sAAAAASUVORK5CYII=', 'base64')
+  assert.equal((await send('<svg xmlns="http://www.w3.org/2000/svg" />')).status, 415)
+  assert.equal((await send(png, { id: 'a-000000000000' })).status, 404)
+  assert.equal((await send(png, { headers: { 'content-length': String(9 * 1024 * 1024) } })).status, 413)
+  const oversized = new ReadableStream({ start(controller) {
+    controller.enqueue(new Uint8Array(5 * 1024 * 1024))
+    controller.enqueue(new Uint8Array(4 * 1024 * 1024))
+    controller.close()
+  } })
+  assert.equal((await send(oversized)).status, 413, 'stream limit applies without a Content-Length header')
+  const stored = await send(png)
+  assert.equal(stored.status, 201)
+  const { key } = await stored.json()
+  assert.match(key, /^[a-f0-9]{64}\.png$/u)
+  assert.equal((await (await send(png)).json()).key, key)
+  assert.equal((await view('../articles/a-000000000000.json')).status, 404)
+  const served = await view(key)
+  assert.equal(served.headers.get('content-type'), 'image/png')
+  assert.equal(served.headers.get('x-content-type-options'), 'nosniff')
+  assert.deepEqual(Buffer.from(await served.arrayBuffer()), png)
+
+  const text = `第一段。\n\n![插图\\[一\\]](media/${key})`
+  const saved = (await host.call('/save', { id, rev, text })).body
+  const row = saved.articles.find((item) => item.id === id)
+  assert.equal(row.chars, 3)
+  assert.equal(row.preview, '第一段。')
+  const history = await host.call('/versions', { id })
+  const sha = history.body.versions[0].sha
+  assert.deepEqual(execFileSync('git', ['show', `${sha}:articles/media/${key}`], { cwd: join(dataDir, 'repo') }), png)
+  await host.call('/save', { id, rev: saved.article.rev, text: '去掉插图。' })
+  const restored = (await host.call('/restore', { id, sha })).body.article
+  assert.equal(restored.text.trimEnd(), text)
+  assert.deepEqual(Buffer.from(await (await view(key)).arrayBuffer()), png)
+  await host.call('/versions', { id }) // flush the debounce before test cleanup
 })

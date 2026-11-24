@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ChatGPT（Codex）登录",
+    "description": "在 pi-ai 的 openai-codex 路由的模型设置卡片里加一块登录区。点「登录 ChatGPT」会走设备码授权：这里显示一次性代码和要打开的页面，授权写入后自动更新状态。授权记录由 DSH 的授权 seam 直接写入，不经过页面，因此这条路由上的模型请求花的是 ChatGPT Plus/Pro/Team 订阅额度而不是 API key。这块区域同时显示已登录账号与授权到期时间，并可退出登录（删除本地记录）。"
+  }
+}

@@ -1,10 +1,11 @@
 # Cache cleanup (`@local/cache-cleaner`)
 
 A Settings page that reports and clears the data every DSH home on this machine has
-produced. Sessions that a running DSH process still holds open are skipped, so the
-current conversation — and every other live conversation of every account — keeps
-working while cold logs and canvases are removed. Session logs and canvas documents are
-real data, not rebuildable caches: deletion is permanent.
+produced. **Session log deletion is limited to archived sessions**; unarchived
+conversations and their checkpoints stay untouched. Archived sessions that a running DSH
+process still holds open are skipped. Canvas documents are still removed in full, because
+they are not archived per session. Session logs and canvas documents are real data, not
+rebuildable caches: deletion is permanent.
 
 ## What it covers
 
@@ -17,15 +18,22 @@ One DSH home is `$DSH_HOME`, normally `<account home>/.dsh`. The page discovers:
 
 | Category | Path (per home) | What is removed |
 | --- | --- | --- |
-| Session logs | `sessions/<project>/<session>/` | The append-only JSONL log of a cold conversation, its lock file, and any temporary files in that directory. |
-| Projection checkpoints | `storages/session_projcache/sessions/<id>.json` | Cached projection rows derived from session logs; a live session's row is kept. |
+| Session logs | `sessions/<project>/<session>/` | The append-only JSONL log of an **archived**, cold conversation, its lock file, and any temporary files in that directory. Unarchived sessions are never touched. |
+| Projection checkpoints | `storages/session_projcache/sessions/<id>.json` | Cached rows for archived sessions, plus records whose session directory no longer exists. A live or unarchived session's rows are kept. |
 | Canvas artifacts | `storages/artifacts/<workspace>/<artifact>/` | Documents kept by `@local/dsh-artifacts`: metadata, version files, and the workspace directory when it becomes empty. |
 
+Archived state is read from `<home>/storages/workspace.json` (`global.archivedSessionIds`).
+A home with no such file has no archived sessions, so nothing is deleted there. A file
+that exists but cannot be read or parsed makes the session target fail for that home
+instead of guessing.
+
 The two buttons and the **Clear everything** action map to the `sessions` and `canvas`
-targets. `sessions` removes session logs **and** their projection checkpoints.
+targets. `sessions` removes archived session logs **and** their projection checkpoints.
 
 ## Safety
 
+- **Only archived logs.** An unarchived session's directory and checkpoint are never
+  candidates, regardless of age or activity.
 - **Atomic deletion under the session lock.** The JSONL backend holds `flock(2)` on each
   session's `session.lock` for the life of its write handle. Deletion runs as
   `flock -n <lock> rm -rf <dir>`, so the kernel grants the directory to exactly one side:
@@ -54,14 +62,15 @@ targets. `sessions` removes session logs **and** their projection checkpoints.
 Settings (the gear) → **缓存清理 / Cache cleanup**. The page shows one card per DSH home
 with session, projection, and canvas sizes, then offers:
 
-- **清理会话记录 / Clear session history** — cold session logs plus every cold
-  projection checkpoint;
+- **清理会话记录 / Clear session history** — archived, cold session logs plus their
+  projection checkpoints;
 - **清理画布文档 / Clear canvas documents** — canvas artifacts;
 - **全部清理 / Clear everything** — both.
 
 Each action asks for confirmation inline, focuses the confirm button, and reports freed
-bytes, removed counts, skipped sessions by reason (in use, recently modified, changed
-after the scan, unverifiable lock), and per-path failures. **重新扫描** refreshes the
+bytes, removed counts, how many unarchived sessions were kept, skipped archived sessions
+by reason (in use, recently modified, changed after the scan, unverifiable lock), and
+per-path failures. **重新扫描** refreshes the
 numbers and disables the destructive actions while it runs.
 
 ## Agent tool
@@ -70,8 +79,8 @@ numbers and disables the destructive actions while it runs.
 
 | Action | Parameters | Effect |
 | --- | --- | --- |
-| `scan` | — | Returns per-home sizes and counts; changes nothing. |
-| `clean` | `targets?: ('sessions' \| 'canvas')[]`, `confirm: true` | Deletes the selected categories; refuses without `confirm: true`. |
+| `scan` | — | Returns per-home sizes and archived counts; changes nothing. |
+| `clean` | `targets?: ('sessions' \| 'canvas')[]`, `confirm: true` | Deletes archived logs and/or canvas documents; refuses without `confirm: true`. |
 
 The tool description states that cleaning is destructive and only for an explicit user
 request. Both callers share `lib/cache.js`, so the UI and the tool cannot drift.
@@ -98,8 +107,9 @@ Owner-admitted Fetch routes:
   depend on either.
 - A custom `artifactsDir` on `@local/dsh-artifacts` is not discovered; only the default
   `storages/artifacts` layout under each home is cleaned.
-- Removing a cold session does not rename or archive anything; the conversation simply
-  disappears from history after the page refreshes its session list. A session whose
-  write lock is held is never deleted, even when `minAgeMinutes` is `0`.
+- Removing a cold archived session does not rename anything; the conversation simply
+  disappears from the archive after the page refreshes its session list. A session whose
+  write lock is held is never deleted, even when `minAgeMinutes` is `0`, and an
+  unarchived session is never a candidate.
 - Turning the bundle off removes the Settings page, both routes, and the tool; nothing
   else is changed.

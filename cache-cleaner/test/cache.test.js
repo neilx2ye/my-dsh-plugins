@@ -43,7 +43,7 @@ async function write(file, content) {
  * canvas artifacts.
  * @returns the fixture paths.
  */
-async function fixture() {
+async function fixture(archived = []) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cache-cleaner-'));
   const home = { path: root, owner: 'tester', current: false, exists: true, available: true, writable: true, error: null };
   const project = path.join(root, 'sessions', '--project--');
@@ -61,6 +61,10 @@ async function fixture() {
   await write(path.join(workspace, 'artifact-one', 'meta.json'), 'f'.repeat(10));
   await write(path.join(workspace, 'artifact-one', 'v1.html'), 'g'.repeat(20));
   await write(path.join(workspace, 'artifact-two', 'meta.json'), 'h'.repeat(5));
+  await write(
+    path.join(root, 'storages', 'workspace.json'),
+    JSON.stringify({ unit: { name: 'workspace', version: 2 }, global: { archivedSessionIds: archived } }),
+  );
   return { root, home, project, first, second, cacheRoot, workspace };
 }
 
@@ -148,7 +152,7 @@ test('formatBytes renders compact sizes', () => {
 });
 
 test('inspectHome sizes each category and marks the live session', async () => {
-  const data = await fixture();
+  const data = await fixture(['session-one']);
   try {
     const { report, entries } = await inspectHome(data.home, {
       openPaths: liveMap(data.first),
@@ -160,6 +164,13 @@ test('inspectHome sizes each category and marks the live session', async () => {
     assert.equal(report.sessions.projectCount, 1);
     assert.equal(report.sessions.bytes, 100 + 200);
     assert.equal(report.sessions.liveBytes, 100);
+    assert.equal(report.sessions.archivedCount, 1);
+    assert.equal(report.sessions.archivedBytes, 100);
+    assert.equal(report.sessions.archivedLiveCount, 1);
+    assert.equal(report.sessions.otherCount, 1);
+    assert.equal(report.sessions.otherBytes, 200);
+    assert.equal(report.archive.available, true);
+    assert.equal(report.archive.count, 1);
     assert.equal(report.projectionCache.count, 2);
     assert.equal(report.projectionCache.liveCount, 1);
     assert.equal(report.projectionCache.bytes, 50 + 60 + 7);
@@ -176,8 +187,8 @@ test('inspectHome sizes each category and marks the live session', async () => {
   }
 });
 
-test('cleanAll removes cold logs and checkpoints but keeps the live session', async () => {
-  const data = await fixture();
+test('cleanAll removes cold archived logs and keeps an archived live session', async () => {
+  const data = await fixture(['session-one', 'session-two']);
   const holder = await holdLock(path.join(data.first, 'session.lock'));
   try {
     const result = await cleanAll([data.home], {
@@ -190,6 +201,7 @@ test('cleanAll removes cold logs and checkpoints but keeps the live session', as
     assert.equal(result.freed.cacheBytes, 60);
     assert.equal(result.skippedCount, 1);
     assert.equal(result.skippedByReason.live, 1);
+    assert.equal(result.retained.unarchivedSessions, 0);
     assert.equal(result.skipped[0].sessionId, 'session-one');
     assert.equal(result.skipped[0].reason, 'live');
     assert.equal(result.after.sessions, 1);
@@ -208,8 +220,60 @@ test('cleanAll removes cold logs and checkpoints but keeps the live session', as
   }
 });
 
+test('cleanAll keeps unarchived sessions and their checkpoints', async () => {
+  const data = await fixture(['session-two']);
+  try {
+    const result = await cleanAll([data.home], {
+      targets: ['sessions'],
+      openPaths: new Map(),
+    });
+    assert.equal(result.removed.sessions, 1);
+    assert.equal(result.freed.sessionsBytes, 200);
+    assert.equal(result.freed.cacheBytes, 60);
+    assert.equal(result.skippedCount, 0);
+    assert.equal(result.retained.unarchivedSessions, 1);
+    assert.equal(result.retained.unarchivedBytes, 100);
+    await assert.doesNotReject(fs.stat(data.first));
+    await assert.rejects(fs.stat(data.second), { code: 'ENOENT' });
+    await assert.doesNotReject(fs.stat(path.join(data.cacheRoot, 'session-one.json')));
+    await assert.doesNotReject(fs.stat(path.join(data.cacheRoot, 'session-one.json.bak.1')));
+    await assert.rejects(fs.stat(path.join(data.cacheRoot, 'session-two.json')), { code: 'ENOENT' });
+  } finally {
+    await fs.rm(data.root, { recursive: true, force: true });
+  }
+});
+
+test('an unreadable archive file keeps every session log and reports it', async () => {
+  const data = await fixture(['session-one']);
+  try {
+    await fs.writeFile(path.join(data.root, 'storages', 'workspace.json'), '{not json');
+    const result = await cleanAll([data.home], { targets: ['sessions'], openPaths: new Map() });
+    assert.equal(result.removed.sessions, 0);
+    assert.equal(result.failureCount, 1);
+    assert.match(result.failures[0].message, /JSON/i);
+    await assert.doesNotReject(fs.stat(data.first));
+    await assert.doesNotReject(fs.stat(data.second));
+  } finally {
+    await fs.rm(data.root, { recursive: true, force: true });
+  }
+});
+
+test('a home without archive state keeps every session log', async () => {
+  const data = await fixture([]);
+  try {
+    await fs.rm(path.join(data.root, 'storages', 'workspace.json'));
+    const result = await cleanAll([data.home], { targets: ['sessions'], openPaths: new Map() });
+    assert.equal(result.removed.sessions, 0);
+    assert.equal(result.failureCount, 0);
+    await assert.doesNotReject(fs.stat(data.first));
+    await assert.doesNotReject(fs.stat(data.second));
+  } finally {
+    await fs.rm(data.root, { recursive: true, force: true });
+  }
+});
+
 test('cleanAll removes canvas artifacts without touching sessions', async () => {
-  const data = await fixture();
+  const data = await fixture(['session-one']);
   try {
     const result = await cleanAll([data.home], {
       targets: ['canvas'],
@@ -227,7 +291,7 @@ test('cleanAll removes canvas artifacts without touching sessions', async () => 
 });
 
 test('minAgeMinutes skips a session modified inside the window', async () => {
-  const data = await fixture();
+  const data = await fixture(['session-one', 'session-two']);
   try {
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
     await fs.utimes(path.join(data.first, 'session.v4.jsonl.zstd'), old, old);
@@ -248,7 +312,7 @@ test('minAgeMinutes skips a session modified inside the window', async () => {
 });
 
 test('removeSessionIfUnchanged skips a session that grew after the scan', async () => {
-  const data = await fixture();
+  const data = await fixture(['session-two']);
   try {
     const original = await inspectHome(data.home, { openPaths: new Map() });
     const target = original.entries.sessions.find((entry) => entry.id === 'session-two');
@@ -263,7 +327,7 @@ test('removeSessionIfUnchanged skips a session that grew after the scan', async 
 });
 
 test('removeSessionLocked deletes a free session and reports a held one', async () => {
-  const data = await fixture();
+  const data = await fixture(['session-one']);
   const holder = await holdLock(path.join(data.first, 'session.lock'));
   try {
     const busy = await removeSessionLocked(data.first);
@@ -282,7 +346,7 @@ test('removeSessionLocked deletes a free session and reports a held one', async 
 });
 
 test('a read-only home is reported instead of deleted', async () => {
-  const data = await fixture();
+  const data = await fixture(['session-one', 'session-two']);
   try {
     const result = await cleanAll([{ ...data.home, writable: false }], {
       targets: ['sessions', 'canvas'],
@@ -298,7 +362,7 @@ test('a read-only home is reported instead of deleted', async () => {
 });
 
 test('collectOpenPaths finds a file this process holds open', { skip: process.platform !== 'linux' }, async () => {
-  const data = await fixture();
+  const data = await fixture(['session-one']);
   const handle = await fs.open(path.join(data.first, 'session.v4.jsonl.zstd'), 'r');
   try {
     const open = await collectOpenPaths([path.join(data.root, 'sessions')]);

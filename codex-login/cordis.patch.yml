@@ -1,0 +1,4 @@
+# Sign in with ChatGPT / Codex from the Models settings page.
+- insert:
+    - id: codex-login
+      name: '@local/codex-login'

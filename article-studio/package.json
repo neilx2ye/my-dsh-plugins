@@ -1,9 +1,9 @@
 {
   "name": "@local/article-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "A writing desk for one DSH profile: article CRUD and styling, plus a named writing partner summoned at the caret.",
+  "description": "A writing desk for one DSH profile: article CRUD, styling, inline images, and a heading outline, plus a named writing partner summoned at the caret.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

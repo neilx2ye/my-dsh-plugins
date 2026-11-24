@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ChatGPT (Codex) sign-in",
+    "description": "Adds a sign-in block to the Models settings card of the pi-ai openai-codex route. Clicking Sign in with ChatGPT starts a device-code grant: the block shows the one-time code and the page to enter it, then reports when the credential is stored. The grant is written by the harness authorization seam and never passes through the page, so DSH model requests on that route spend the ChatGPT Plus/Pro/Team subscription quota instead of an API key. The block also shows the stored account and grant expiry, and can sign out by deleting the local record."
+  }
+}

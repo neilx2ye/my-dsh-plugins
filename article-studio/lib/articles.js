@@ -15,6 +15,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { withoutImageReferences } from './media.js'
 
 /** Font families the editor offers; the client maps them to CSS stacks. */
 export const FONT_VALUES = ['serif', 'sans', 'kai', 'mono']
@@ -123,7 +124,7 @@ export function stylePreset(name) {
  * @returns the counted length.
  */
 export function countWords(text) {
-  const value = typeof text === 'string' ? text : ''
+  const value = typeof text === 'string' ? withoutImageReferences(text) : ''
   const cjk = value.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/gu)?.length ?? 0
   const latin = value.match(/[A-Za-z0-9]+/gu)?.length ?? 0
   return cjk + latin
@@ -136,7 +137,7 @@ export function countWords(text) {
  * @returns the summary without Markdown control characters.
  */
 export function previewOf(text, limit = 80) {
-  const plain = String(text ?? '')
+  const plain = withoutImageReferences(String(text ?? ''))
     .replace(/^#{1,6}\s+/gmu, '')
     .replace(/[*_`>~]/gu, '')
     .replace(/\s+/gu, ' ')
@@ -165,7 +166,7 @@ export function articleToMarkdown(article) {
  */
 export function normalizeChange(raw) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
-  if (typeof raw.before !== 'string' || raw.before === '') return undefined
+  if (typeof raw.before !== 'string') return undefined
   return {
     before: raw.before,
     at: typeof raw.at === 'string' ? raw.at : new Date().toISOString(),
@@ -291,7 +292,9 @@ export function createArticleStore(options) {
      * @returns stored articles.
      */
     list() {
-      return [...cache.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      // Newest first by creation: editing an article must not make its row jump
+      // around while autosave updates the timestamp.
+      return [...cache.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     },
 
     /**

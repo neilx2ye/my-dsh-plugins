@@ -15,9 +15,11 @@
  */
 
 import { execFile } from 'node:child_process'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { imageReferences } from './media.js'
 
 const exec = promisify(execFile)
 
@@ -134,6 +136,20 @@ export function createVersionStore(options) {
     if (article === null) {
       await rm(file, { force: true })
       return
+    }
+    if (options.mediaDir) {
+      const images = imageReferences(article.text)
+      if (images.size > 0) {
+        const mirrorDir = join(articlesDir, 'media')
+        await mkdir(mirrorDir, { recursive: true })
+        for (const key of images) {
+          try {
+            await copyFile(join(options.mediaDir, key), join(mirrorDir, key), constants.COPYFILE_EXCL)
+          } catch (error) {
+            if (error?.code !== 'ENOENT' && error?.code !== 'EEXIST') throw error
+          }
+        }
+      }
     }
     await writeFile(file, mirrorOf(article), 'utf8')
   }

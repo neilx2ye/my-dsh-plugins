@@ -1,9 +1,9 @@
 {
   "name": "@local/cache-cleaner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "description": "Clear DSH session logs, projection checkpoints, and canvas artifacts for every account on this machine.",
+  "description": "Clear archived DSH session logs, their projection checkpoints, and canvas artifacts for every account on this machine.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

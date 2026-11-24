@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Cache cleanup",
-    "description": "Scan and clear session logs, session projection checkpoints, and canvas documents for every DSH home on this machine, including other Linux accounts. Clear sessions and canvas separately or all at once; a session whose write lock is held is skipped during deletion. Deleted sessions and canvas documents cannot be recovered. A cache_cleaner tool exposes the same scan and confirmed cleanup to the agent."
+    "description": "Scan and clear session logs, session projection checkpoints, and canvas documents for every DSH home on this machine, including other Linux accounts. Session-log cleanup is limited to archived sessions; unarchived sessions and their checkpoints are kept, and an archived session whose write lock is held is skipped. Canvas documents are cleared in full. Deleted sessions and canvas documents cannot be recovered. A cache_cleaner tool exposes the same scan and confirmed cleanup to the agent."
   }
 }

@@ -26,7 +26,7 @@ window.__ModuleLoader__.load({
       title: 'Cache cleanup',
       description:
         'Scans every DSH home on this machine, including the homes of other Linux accounts, and reports session logs, projection checkpoints, and canvas documents. Cleaning permanently deletes them; a session that any DSH process still holds open is skipped.',
-      warning: 'Session logs and canvas documents are real data, not rebuildable caches. Deleted sessions cannot be resumed and deleted canvas documents cannot be restored.',
+      warning: 'Only archived session logs are deleted; unarchived sessions and their checkpoints are kept, and an archived session that is in use is skipped. Canvas documents are deleted in full. These are not rebuildable caches: deleted sessions cannot be resumed and deleted canvas documents cannot be restored.',
       rescan: 'Scan again',
       scanning: 'Scanning…',
       scannedAt: 'Scanned {time}',
@@ -36,6 +36,7 @@ window.__ModuleLoader__.load({
       recentNote: '{count} session(s) modified recently · skipped while cleaning',
       restrictedNote:
         'This process cannot read every open file under /proc, so the in-use count may be low for other accounts; deletion still checks each session lock and skips a session whose lock is held or cannot be verified.',
+      archiveBlocked: 'Archive state is unreadable in {count} DSH home(s); their session logs are kept.',
       current: 'This instance',
       unavailable: 'Unavailable',
       readOnly: 'Read-only',
@@ -43,6 +44,8 @@ window.__ModuleLoader__.load({
       projection: 'Projection checkpoints',
       canvas: 'Canvas documents',
       sessionsNote: '{count} session(s)',
+      archivedNote: '{count} archived · {size}',
+      archiveUnavailable: 'Archive state unavailable · logs are kept',
       liveInHome: '{count} in use',
       projectionNote: '{count} record(s)',
       canvasNote: '{count} document(s)',
@@ -51,10 +54,10 @@ window.__ModuleLoader__.load({
       cleanAll: 'Clear everything',
       confirmTitle: 'Confirm deletion',
       confirmSessions:
-        'Deletes up to {count} idle session log(s) and clears every cold projection checkpoint, freeing up to about {size}. {live} session(s) in use and their checkpoints are kept.',
+        'Deletes up to {count} archived, idle session log(s) and their projection checkpoints, freeing up to about {size}. Unarchived sessions are kept; {live} archived session(s) in use and their checkpoints are kept.',
       confirmCanvas: 'Deletes {count} canvas document(s), freeing about {size}. Canvas contents cannot be recovered.',
       confirmAll:
-        'Deletes up to {count} idle session log(s) and {artifacts} canvas document(s), and clears every cold projection checkpoint, freeing up to about {size}. Canvas contents and deleted sessions cannot be recovered.',
+        'Deletes up to {count} archived, idle session log(s) with their checkpoints, plus {artifacts} canvas document(s), freeing up to about {size}. Unarchived sessions are kept; canvas contents and deleted sessions cannot be recovered.',
       confirmNote: 'This action cannot be undone.',
       cancel: 'Cancel',
       confirm: 'Delete now',
@@ -66,7 +69,8 @@ window.__ModuleLoader__.load({
       emptyTitle: 'No DSH caches found',
       emptyText: 'No writable DSH home contains session, projection, or canvas data yet.',
       resultSummary:
-        'Freed {size}: {sessions} session log(s), {records} projection record(s), {artifacts} canvas document(s).',
+        'Freed {size}: {sessions} archived session log(s), {records} projection record(s), {artifacts} canvas document(s).',
+      resultRetained: 'Kept {count} unarchived session log(s).',
       resultSkipped: 'Skipped {parts}.',
       resultSkippedLive: '{count} in use',
       resultSkippedRecent: '{count} recently modified',
@@ -85,7 +89,7 @@ window.__ModuleLoader__.load({
       title: '缓存清理',
       description:
         '扫描本机所有 DSH 主目录（包括其他 Linux 账户），列出会话日志、会话投影缓存与画布文档。清理会永久删除这些数据；任何 DSH 进程仍在使用中的会话都会跳过。',
-      warning: '会话日志与画布文档是实际数据，不是可以重建的缓存。已删除的会话无法恢复，已删除的画布文档也无法找回。',
+      warning: '会话日志只删除已归档的会话：未归档会话及其投影缓存保留，使用中的归档会话跳过。画布文档会全部删除。这些都不是可重建的缓存：已删除的会话无法恢复，已删除的画布文档也无法找回。',
       rescan: '重新扫描',
       scanning: '正在扫描…',
       scannedAt: '扫描于 {time}',
@@ -95,6 +99,7 @@ window.__ModuleLoader__.load({
       recentNote: '{count} 个会话最近修改 · 清理时跳过',
       restrictedNote:
         '当前进程无法读取全部 /proc 打开文件，其他账户的“使用中”数量可能偏少；删除时仍会逐个检查会话锁，锁被占用或无法验证的会话会跳过。',
+      archiveBlocked: '{count} 个 DSH 主目录的归档状态无法读取，这些主目录的会话日志会保留。',
       current: '当前实例',
       unavailable: '不可用',
       readOnly: '只读',
@@ -102,6 +107,8 @@ window.__ModuleLoader__.load({
       projection: '会话投影缓存',
       canvas: '画布文档',
       sessionsNote: '{count} 个会话',
+      archivedNote: '已归档 {count} 个 · {size}',
+      archiveUnavailable: '归档状态不可用 · 会话日志保留',
       liveInHome: '{count} 个使用中',
       projectionNote: '{count} 条记录',
       canvasNote: '{count} 个文档',
@@ -110,10 +117,10 @@ window.__ModuleLoader__.load({
       cleanAll: '全部清理',
       confirmTitle: '确认删除',
       confirmSessions:
-        '将删除至多 {count} 个未在使用中的会话日志，并清空所有非活动会话的投影缓存，最多释放约 {size}；{live} 个正在使用中的会话及其缓存会保留。',
+        '将删除至多 {count} 个已归档且未在使用中的会话日志及其投影缓存，最多释放约 {size}；未归档会话全部保留，{live} 个使用中的归档会话及其缓存也会保留。',
       confirmCanvas: '将删除 {count} 个画布文档，释放约 {size}。画布内容删除后无法恢复。',
       confirmAll:
-        '将删除至多 {count} 个会话日志与 {artifacts} 个画布文档，并清空非活动会话的投影缓存，最多释放约 {size}。画布文档与已删除的会话都无法恢复。',
+        '将删除至多 {count} 个已归档且未在使用中的会话日志及其投影缓存，以及 {artifacts} 个画布文档，最多释放约 {size}。未归档会话保留；画布文档与已删除的会话都无法恢复。',
       confirmNote: '此操作不可撤销。',
       cancel: '取消',
       confirm: '确认删除',
@@ -123,7 +130,8 @@ window.__ModuleLoader__.load({
       noLiveDetection: '当前平台既没有进程文件表也没有 flock，因此不能清理会话缓存；画布清理仍可使用。',
       emptyTitle: '没有发现 DSH 缓存',
       emptyText: '可写的 DSH 主目录中还没有会话、投影或画布数据。',
-      resultSummary: '已释放 {size}：会话日志 {sessions} 个、投影记录 {records} 条、画布文档 {artifacts} 个。',
+      resultSummary: '已释放 {size}：已归档会话日志 {sessions} 个、投影记录 {records} 条、画布文档 {artifacts} 个。',
+      resultRetained: '保留了 {count} 个未归档会话日志。',
       resultSkipped: '跳过 {parts}。',
       resultSkippedLive: '{count} 个使用中',
       resultSkippedRecent: '{count} 个最近修改',
@@ -309,7 +317,17 @@ window.__ModuleLoader__.load({
                 label: t('sessions'),
                 bytes: home.sessions.bytes,
                 note: t('sessionsNote', { count: home.sessions.count }),
-                extra: home.sessions.liveCount > 0 ? t('liveInHome', { count: home.sessions.liveCount }) : undefined,
+                extra: home.archive.available === false
+                  ? t('archiveUnavailable')
+                  : [
+                      t('archivedNote', {
+                        count: home.sessions.archivedCount,
+                        size: formatBytes(home.sessions.archivedBytes),
+                      }),
+                      ...(home.sessions.archivedLiveCount > 0
+                        ? [t('liveInHome', { count: home.sessions.archivedLiveCount })]
+                        : []),
+                    ].join(' · '),
               }),
               h(StatCell, {
                 label: t('projection'),
@@ -417,9 +435,18 @@ window.__ModuleLoader__.load({
       const writableHomes = report === null ? [] : report.homes.filter((home) => home.available && home.writable);
       const cleanable = writableHomes.reduce(
         (sum, home) => ({
-          sessions: sum.sessions + Math.max(0, home.sessions.count - home.sessions.liveCount - home.sessions.recentCount),
-          sessionBytes: sum.sessionBytes + Math.max(0, home.sessions.bytes - home.sessions.liveBytes - home.sessions.recentBytes),
-          cacheBytes: sum.cacheBytes + Math.max(0, home.projectionCache.bytes - home.projectionCache.liveBytes),
+          sessions: sum.sessions + Math.max(
+            0,
+            home.sessions.archivedCount - home.sessions.archivedLiveCount - home.sessions.archivedRecentCount,
+          ),
+          sessionBytes: sum.sessionBytes + Math.max(
+            0,
+            home.sessions.archivedBytes - home.sessions.archivedLiveBytes - home.sessions.archivedRecentBytes,
+          ),
+          cacheBytes: sum.cacheBytes + Math.max(
+            0,
+            home.projectionCache.eligibleBytes - home.projectionCache.eligibleLiveBytes,
+          ),
           artifacts: sum.artifacts + home.canvas.count,
           canvasBytes: sum.canvasBytes + home.canvas.bytes,
         }),
@@ -431,6 +458,9 @@ window.__ModuleLoader__.load({
       const canvasBytes = cleanable.canvasBytes;
       const noLiveDetection = report !== null && report.liveDetection === 'unavailable';
       const restricted = report !== null && report.liveDetection === 'proc-restricted';
+      const archiveBlockedCount = report === null
+        ? 0
+        : report.homes.filter((home) => home.available && home.archive?.available === false).length;
       const scannedLabel = report === null
         ? ''
         : t('scannedAt', {
@@ -438,7 +468,11 @@ window.__ModuleLoader__.load({
           });
 
       const confirmCopy = confirm === 'sessions'
-        ? t('confirmSessions', { count: cleanableSessions, size: formatBytes(cleanableSessionBytes), live: liveCount })
+        ? t('confirmSessions', {
+            count: cleanableSessions,
+            size: formatBytes(cleanableSessionBytes),
+            live: totals?.archivedLiveSessions ?? 0,
+          })
         : confirm === 'canvas'
           ? t('confirmCanvas', { count: canvasCount, size: formatBytes(canvasBytes) })
           : t('confirmAll', {
@@ -511,6 +545,12 @@ window.__ModuleLoader__.load({
                     `${t('homes', { count: report.homes.length })}`
                       + (liveCount > 0 ? ` · ${t('liveNote', { count: liveCount })}` : '')
                       + (recentCount > 0 ? ` · ${t('recentNote', { count: recentCount })}` : '')
+                      + ((totals?.archivedSessions ?? 0) > 0
+                        ? ` · ${t('archivedNote', {
+                            count: totals.archivedSessions,
+                            size: formatBytes(totals.archivedSessionBytes),
+                          })}`
+                        : '')
                       + (scannedLabel === '' ? '' : ` · ${scannedLabel}`),
                   ),
                 ),
@@ -528,6 +568,9 @@ window.__ModuleLoader__.load({
               ),
               noLiveDetection ? h('p', { className: 'cac-summary-warn', role: 'note' }, t('noLiveDetection')) : null,
               restricted ? h('p', { className: 'cac-summary-warn', role: 'note' }, t('restrictedNote')) : null,
+              archiveBlockedCount > 0
+                ? h('p', { className: 'cac-summary-warn', role: 'note' }, t('archiveBlocked', { count: archiveBlockedCount }))
+                : null,
               state.error !== null && state.status === 'ready'
                 ? h(
                     'div',
@@ -638,6 +681,13 @@ window.__ModuleLoader__.load({
                           React.Fragment,
                           null,
                           h('p', { className: 'cac-alert-title' }, resultText),
+                          (result.data.retained?.unarchivedSessions ?? 0) > 0
+                            ? h(
+                                'p',
+                                { className: 'cac-alert-text' },
+                                t('resultRetained', { count: result.data.retained.unarchivedSessions }),
+                              )
+                            : null,
                           skippedText === null ? null : h('p', { className: 'cac-alert-text' }, skippedText),
                           h(
                             'p',

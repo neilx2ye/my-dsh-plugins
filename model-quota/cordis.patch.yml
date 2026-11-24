@@ -1,0 +1,8 @@
+# Remaining ChatGPT / Codex subscription quota under the composer.
+- insert:
+    - id: model-quota
+      name: '@local/model-quota'
+      config:
+        # Reuse one upstream reading for this long. The limit windows move on a
+        # multi-hour scale, so a minute is plenty and keeps the endpoint quiet.
+        cacheMs: 60000

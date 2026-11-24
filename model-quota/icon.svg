@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" role="img" aria-label="Model quota meter">
+  <path d="M8 25.5a10 10 0 1 1 20 0" fill="none" stroke="#33415a" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M8 25.5a10 10 0 0 1 6.2-9.2" fill="none" stroke="#5b9dff" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M18 20.5 23 14" fill="none" stroke="#e7f0ff" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="18" cy="20.5" r="2.2" fill="#e7f0ff"/>
+  <path d="M26.6 23.4h4.6" fill="none" stroke="#7fd7c4" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

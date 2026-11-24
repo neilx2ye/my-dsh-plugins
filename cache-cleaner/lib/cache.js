@@ -354,6 +354,12 @@ export async function inspectHome(home, options = {}) {
     available: home.available !== false,
     writable: home.writable !== false,
     error: home.error ?? null,
+    archive: {
+      file: path.join(home.path, STORAGES_DIR, 'workspace.json'),
+      available: false,
+      error: null,
+      count: 0,
+    },
     sessions: {
       root: path.join(home.path, SESSIONS_DIR),
       count: 0,
@@ -363,6 +369,14 @@ export async function inspectHome(home, options = {}) {
       bytes: 0,
       liveBytes: 0,
       recentBytes: 0,
+      archivedCount: 0,
+      archivedBytes: 0,
+      archivedLiveCount: 0,
+      archivedLiveBytes: 0,
+      archivedRecentCount: 0,
+      archivedRecentBytes: 0,
+      otherCount: 0,
+      otherBytes: 0,
       files: 0,
       error: null,
     },
@@ -372,6 +386,9 @@ export async function inspectHome(home, options = {}) {
       liveCount: 0,
       bytes: 0,
       liveBytes: 0,
+      eligibleCount: 0,
+      eligibleBytes: 0,
+      eligibleLiveBytes: 0,
       files: 0,
       error: null,
     },
@@ -389,6 +406,25 @@ export async function inspectHome(home, options = {}) {
   if (!report.available) return { report, entries };
   const now = Date.now();
   const sessionRoot = report.sessions.root;
+  const archivedIds = new Set();
+  try {
+    const text = await fs.readFile(report.archive.file, 'utf8');
+    const parsed = JSON.parse(text);
+    const list = parsed !== null && typeof parsed === 'object' ? parsed.global?.archivedSessionIds : undefined;
+    if (!Array.isArray(list)) throw new Error('global.archivedSessionIds is missing');
+    for (const id of list) if (typeof id === 'string' && id !== '') archivedIds.add(id);
+    report.archive.available = true;
+    report.archive.count = archivedIds.size;
+  } catch (error) {
+    if (error !== null && typeof error === 'object' && error.code === 'ENOENT') {
+      // No workspace registry in this home: nothing can be archived there.
+      report.archive.available = true;
+    } else {
+      report.archive.available = false;
+      report.archive.error = messageOf(error);
+      report.error ??= `${report.archive.file}: ${report.archive.error}`;
+    }
+  }
 
   let projects = [];
   try {
@@ -423,6 +459,7 @@ export async function inspectHome(home, options = {}) {
       const pids = livePidsFor(dir, openPaths);
       const live = pids.size > 0;
       const recent = !live && minAgeMinutes > 0 && size.mtimeMs > 0 && now - size.mtimeMs < minAgeMinutes * 60_000;
+      const archived = archivedIds.has(session.name);
       entries.sessions.push({
         dir,
         id: session.name,
@@ -431,6 +468,7 @@ export async function inspectHome(home, options = {}) {
         activityMs: size.mtimeMs,
         live,
         recent,
+        archived,
         pids: [...pids],
       });
       report.sessions.count += 1;
@@ -444,11 +482,28 @@ export async function inspectHome(home, options = {}) {
         report.sessions.recentCount += 1;
         report.sessions.recentBytes += size.bytes;
       }
+      if (archived) {
+        report.sessions.archivedCount += 1;
+        report.sessions.archivedBytes += size.bytes;
+        if (live) {
+          report.sessions.archivedLiveCount += 1;
+          report.sessions.archivedLiveBytes += size.bytes;
+        }
+        if (recent) {
+          report.sessions.archivedRecentCount += 1;
+          report.sessions.archivedRecentBytes += size.bytes;
+        }
+      } else {
+        report.sessions.otherCount += 1;
+        report.sessions.otherBytes += size.bytes;
+      }
     }
   }
   report.sessions.projectCount = entries.projectDirs.length;
 
   const liveIds = new Set(entries.sessions.filter((entry) => entry.live).map((entry) => entry.id));
+  const sessionIds = new Set(entries.sessions.map((entry) => entry.id));
+  const archivedIdSet = new Set(entries.sessions.filter((entry) => entry.archived).map((entry) => entry.id));
   let cacheFiles = [];
   try {
     cacheFiles = await fs.readdir(report.projectionCache.root, { withFileTypes: true });
@@ -471,13 +526,21 @@ export async function inspectHome(home, options = {}) {
     const isRecord = item.name.endsWith('.json');
     const id = item.name.replace(/\.json(?:\.bak\..*)?$/, '');
     const live = isRecord && liveIds.has(id);
-    entries.cache.push({ path: file, id, bytes, live, bak: !isRecord });
+    const archived = archivedIdSet.has(id);
+    const orphan = !sessionIds.has(id);
+    const eligible = archived || orphan;
+    entries.cache.push({ path: file, id, bytes, live, bak: !isRecord, archived, orphan, eligible });
     report.projectionCache.files += 1;
     report.projectionCache.bytes += bytes;
     if (isRecord) report.projectionCache.count += 1;
     if (live) {
       report.projectionCache.liveCount += 1;
       report.projectionCache.liveBytes += bytes;
+    }
+    if (eligible) {
+      report.projectionCache.eligibleCount += 1;
+      report.projectionCache.eligibleBytes += bytes;
+      if (live) report.projectionCache.eligibleLiveBytes += bytes;
     }
   }
 
@@ -538,9 +601,20 @@ export function totalsOf(reports) {
     sessionBytes: 0,
     liveSessionBytes: 0,
     recentSessionBytes: 0,
+    archivedSessions: 0,
+    archivedSessionBytes: 0,
+    archivedLiveSessions: 0,
+    archivedLiveBytes: 0,
+    archivedRecentSessions: 0,
+    archivedRecentBytes: 0,
+    unarchivedSessions: 0,
+    unarchivedBytes: 0,
     cacheRecords: 0,
     cacheBytes: 0,
     liveCacheBytes: 0,
+    cacheEligibleRecords: 0,
+    cacheEligibleBytes: 0,
+    cacheEligibleLiveBytes: 0,
     artifacts: 0,
     canvasBytes: 0,
   };
@@ -552,9 +626,20 @@ export function totalsOf(reports) {
     totals.sessionBytes += report.sessions.bytes;
     totals.liveSessionBytes += report.sessions.liveBytes;
     totals.recentSessionBytes += report.sessions.recentBytes;
+    totals.archivedSessions += report.sessions.archivedCount;
+    totals.archivedSessionBytes += report.sessions.archivedBytes;
+    totals.archivedLiveSessions += report.sessions.archivedLiveCount;
+    totals.archivedLiveBytes += report.sessions.archivedLiveBytes;
+    totals.archivedRecentSessions += report.sessions.archivedRecentCount;
+    totals.archivedRecentBytes += report.sessions.archivedRecentBytes;
+    totals.unarchivedSessions += report.sessions.otherCount;
+    totals.unarchivedBytes += report.sessions.otherBytes;
     totals.cacheRecords += report.projectionCache.count;
     totals.cacheBytes += report.projectionCache.bytes;
     totals.liveCacheBytes += report.projectionCache.liveBytes;
+    totals.cacheEligibleRecords += report.projectionCache.eligibleCount;
+    totals.cacheEligibleBytes += report.projectionCache.eligibleBytes;
+    totals.cacheEligibleLiveBytes += report.projectionCache.eligibleLiveBytes;
     totals.artifacts += report.canvas.count;
     totals.canvasBytes += report.canvas.bytes;
   }
@@ -749,6 +834,7 @@ export async function cleanAll(homes, options = {}) {
   const removed = { sessions: 0, sessionProjects: 0, cacheRecords: 0, cacheFiles: 0, artifacts: 0, canvasWorkspaces: 0 };
   const freed = { sessionsBytes: 0, cacheBytes: 0, canvasBytes: 0 };
   const preservedIds = new Set();
+  const retained = { unarchivedSessions: 0, unarchivedBytes: 0 };
   const skipped = [];
   const skippedByReason = { live: 0, recent: 0, changed: 0, unverifiable: 0 };
   const failures = [];
@@ -776,18 +862,30 @@ export async function cleanAll(homes, options = {}) {
       failures.push({ path: home.path, message: 'permission denied: this DSH home is not writable by the Harness process' });
       continue;
     }
-    if (targets.includes('sessions') && home.sessions.error !== null) {
+    const sessionTarget = targets.includes('sessions') && home.archive.available === true;
+    if (targets.includes('sessions') && home.archive.available !== true) {
+      failures.push({
+        path: home.archive.file,
+        message: home.archive.error ?? 'archived session state is unavailable, so session logs were kept',
+      });
+    }
+    if (sessionTarget && home.sessions.error !== null) {
       failures.push({ path: home.sessions.root, message: home.sessions.error });
     }
-    if (targets.includes('sessions') && home.projectionCache.error !== null) {
+    if (sessionTarget && home.projectionCache.error !== null) {
       failures.push({ path: home.projectionCache.root, message: home.projectionCache.error });
     }
     if (targets.includes('canvas') && home.canvas.error !== null) {
       failures.push({ path: home.canvas.root, message: home.canvas.error });
     }
-    if (targets.includes('sessions')) {
+    if (sessionTarget) {
       for (const entry of detail.entries.sessions) {
         signal?.throwIfAborted?.();
+        if (entry.archived !== true) {
+          retained.unarchivedSessions += 1;
+          retained.unarchivedBytes += entry.bytes;
+          continue;
+        }
         const freshPids = livePidsFor(entry.dir, livePaths);
         if (entry.live || freshPids.size > 0) {
           preservedIds.add(entry.id);
@@ -854,17 +952,20 @@ export async function cleanAll(homes, options = {}) {
           // A project directory with remaining sessions stays.
         }
       }
-      for (const entry of detail.entries.cache) {
-        if (entry.live || liveIds.has(entry.id) || preservedIds.has(entry.id)) continue;
-        try {
-          signal?.throwIfAborted?.();
-          await fs.unlink(entry.path);
-          if (entry.bak) removed.cacheFiles += 1;
-          else removed.cacheRecords += 1;
-          freed.cacheBytes += entry.bytes;
-        } catch (error) {
-          if (error === null || typeof error !== 'object' || error.code !== 'ENOENT') {
-            failures.push({ path: entry.path, message: messageOf(error) });
+      if (home.sessions.error === null) {
+        for (const entry of detail.entries.cache) {
+          if (entry.eligible !== true) continue;
+          if (entry.live || liveIds.has(entry.id) || preservedIds.has(entry.id)) continue;
+          try {
+            signal?.throwIfAborted?.();
+            await fs.unlink(entry.path);
+            if (entry.bak) removed.cacheFiles += 1;
+            else removed.cacheRecords += 1;
+            freed.cacheBytes += entry.bytes;
+          } catch (error) {
+            if (error === null || typeof error !== 'object' || error.code !== 'ENOENT') {
+              failures.push({ path: entry.path, message: messageOf(error) });
+            }
           }
         }
       }
@@ -906,6 +1007,7 @@ export async function cleanAll(homes, options = {}) {
     },
     skippedCount: skipped.length,
     skippedByReason,
+    retained,
     skipped: bounded(skipped),
     failureCount: failures.length,
     failures: bounded(failures),
@@ -953,17 +1055,23 @@ export function formatScan(report) {
     lines.push(
       `- ${prefix}: ${formatBytes(home.bytes)} total`
         + ` · sessions ${formatBytes(home.sessions.bytes)} in ${home.sessions.count}`
-        + ` · projection ${formatBytes(home.projectionCache.bytes)} in ${home.projectionCache.count}`
-        + ` · canvas ${formatBytes(home.canvas.bytes)} in ${home.canvas.count}`
+        + ` (archived ${home.sessions.archivedCount}, ${formatBytes(home.sessions.archivedBytes)}; not archived ${home.sessions.otherCount})`
+        + ` · projection ${formatBytes(home.projectionCache.bytes)} in ${home.projectionCache.count}`,
+    );
+    lines.push(
+      `  canvas ${formatBytes(home.canvas.bytes)} in ${home.canvas.count}`
         + ` · live ${home.sessions.liveCount}`
+        + (home.archive.available ? '' : ' · archive state unavailable')
         + (home.writable ? '' : ' · read-only'),
     );
   }
   const totals = report.totals;
   lines.push(
-    `Total ${formatBytes(totals.bytes)}: sessions ${formatBytes(totals.sessionBytes)},`
+    `Total ${formatBytes(totals.bytes)}: sessions ${formatBytes(totals.sessionBytes)}`
+      + ` (archived ${totals.archivedSessions}, ${formatBytes(totals.archivedSessionBytes)}),`
       + ` projection ${formatBytes(totals.cacheBytes)}, canvas ${formatBytes(totals.canvasBytes)}.`
-      + ` ${totals.liveSessions} live session(s) would be skipped.`,
+      + ` Only archived session logs are deleted; ${totals.unarchivedSessions} unarchived session(s) are kept.`
+      + ` ${totals.archivedLiveSessions} archived session(s) are live and would be skipped.`,
   );
   return lines.join('\n');
 }
@@ -977,7 +1085,8 @@ export function formatClean(result) {
   const removed = result.removed;
   const lines = [
     `Freed ${formatBytes(result.freed.bytes)} from ${result.targets.join(' + ')} in ${result.durationMs} ms.`,
-    `Removed ${removed.sessions} session log(s), ${removed.cacheRecords} projection record(s), ${removed.artifacts} canvas artifact(s).`,
+    `Removed ${removed.sessions} archived session log(s), ${removed.cacheRecords} projection record(s), ${removed.artifacts} canvas document(s).`
+      + ` Kept ${result.retained.unarchivedSessions} unarchived session log(s).`,
   ];
   if (result.skippedCount > 0) {
     const live = result.skipped.filter((entry) => entry.reason === 'live').length;

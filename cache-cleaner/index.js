@@ -158,8 +158,8 @@ export function apply(ctx, config) {
     scope.tools.register({
       name: 'cache_cleaner',
       description:
-        'Inspect and clear the DSH caches on this machine across every DSH home (this account plus every /home/<account>/.dsh this process can read): session logs, their projection checkpoints, and canvas documents. '
-        + 'Actions: "scan" reports sizes and how many sessions are in use without changing anything; "clean" permanently deletes the selected targets and skips a session that any DSH process still holds open or that changed after the scan'
+        'Inspect and clear the DSH caches on this machine across every DSH home (this account plus every /home/<account>/.dsh this process can read): archived session logs, their projection checkpoints, and canvas documents. Unarchived session logs are never deleted. '
+        + 'Actions: "scan" reports sizes, archived counts, and how many sessions are in use without changing anything; "clean" permanently deletes the selected targets and skips an archived session that any DSH process still holds open or that changed after the scan'
         + (settings.minAgeMinutes > 0 ? `, plus sessions modified in the last ${settings.minAgeMinutes} minute(s)` : '')
         + '. Cleaning is destructive and user data cannot be recovered, so call it only when the user explicitly asked to clear these caches; it requires confirm: true.',
       parameters: {
@@ -174,7 +174,7 @@ export function apply(ctx, config) {
           targets: {
             type: 'array',
             items: { type: 'string', enum: ['sessions', 'canvas'] },
-            description: 'For clean: "sessions" removes cold session logs and their projection checkpoints; "canvas" removes canvas documents. Defaults to both.',
+            description: 'For clean: "sessions" removes archived session logs and their projection checkpoints; unarchived sessions are kept. "canvas" removes canvas documents. Defaults to both.',
           },
           confirm: {
             type: 'boolean',

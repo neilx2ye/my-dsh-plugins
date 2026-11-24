@@ -37,6 +37,7 @@ import {
 } from './lib/articles.js'
 import { createChatStore } from './lib/chats.js'
 import { createVersionStore } from './lib/git.js'
+import { createMediaStore, imageMime } from './lib/media.js'
 
 /** Exact Fetch routes all sit under this absolute path prefix. */
 const ROUTE = '/api/article-studio'
@@ -206,8 +207,11 @@ export function apply(ctx, rawConfig) {
   const config = parseConfig(rawConfig)
   const logger = ctx.logger
   const directory = dataHome(ctx, config.dataDir)
+  const mediaDir = join(directory, 'media')
+  const media = createMediaStore(mediaDir)
   const versions = createVersionStore({
     dir: join(directory, 'repo'),
+    mediaDir,
     delayMs: config.gitCommitDelayMs,
     enabled: config.git,
     logger,
@@ -601,7 +605,7 @@ export function apply(ctx, rawConfig) {
       },
       {
         name: 'article_update',
-        description: 'Replace the article title and/or complete Markdown body. Pass only the fields you change. This is a whole-body replacement: include the unchanged paragraphs too, and never truncate the author\'s text. For a small edit prefer article_replace. The editor shows every body change as strikethrough (removed) and highlight (added) until the user keeps or undoes it.',
+        description: 'Replace the article title and/or complete Markdown body. Pass only the fields you change. This is a whole-body replacement: include the unchanged paragraphs too, and never truncate the author\'s text. Preserve existing image Markdown references (![] with media/ paths) unless asked to remove or move them. For a small edit prefer article_replace. The editor shows every body change as strikethrough (removed) and highlight (added) until the user keeps or undoes it.',
         parameters: {
           type: 'object',
           additionalProperties: false,
@@ -1050,6 +1054,51 @@ export function apply(ctx, rawConfig) {
   }
 
   ctx.inject(['connection'], (scope) => {
+    scope.effect(() => scope.connection.fetch.register({
+      path: `${ROUTE}/image-upload`, methods: ['POST'], requestBody: 'streaming',
+      async fetch(request) {
+        if (request.headers.get('content-type') !== 'application/octet-stream') return failure(415, 'invalid-content-type', 'Expected image bytes')
+        const id = new URL(request.url).searchParams.get('article')
+        try {
+          await ready
+          if (!isArticleId(id) || !articles.get(id)) return failure(404, 'not-found', 'Article not found')
+          const result = await media.upload(request)
+          if (result.ok) return json(result, 201)
+          if (result.code === 'image-size') return failure(413, result.code, 'Image exceeds 8 MiB')
+          return failure(415, result.code, 'Only PNG, JPEG, WebP, and GIF images are supported')
+        } catch (error) {
+          logger?.warn?.(`article-studio: image upload failed: ${messageOf(error)}`)
+          return failure(500, 'image-upload-failed', 'Could not store image')
+        }
+      },
+    }), 'article-studio: image upload')
+
+    scope.effect(() => scope.connection.fetch.register({
+      path: `${ROUTE}/image`, methods: ['GET'], requestBody: 'buffered',
+      async fetch(request) {
+        const key = new URL(request.url).searchParams.get('key')
+        const mime = imageMime(key)
+        if (!mime) return failure(404, 'image-not-found', 'Image not found')
+        try {
+          const bytes = await media.read(key)
+          if (!bytes) return failure(404, 'image-not-found', 'Image not found')
+          return new Response(bytes, {
+            headers: {
+              'content-type': mime,
+              'content-length': String(bytes.length),
+              'cache-control': 'private, max-age=31536000, immutable',
+              'cross-origin-resource-policy': 'same-origin',
+              'content-security-policy': "default-src 'none'; sandbox",
+              'x-content-type-options': 'nosniff',
+            },
+          })
+        } catch (error) {
+          logger?.warn?.(`article-studio: image read failed: ${messageOf(error)}`)
+          return failure(500, 'image-read-failed', 'Could not load image')
+        }
+      },
+    }), 'article-studio: image read')
+
     route(scope, '/list', 'list route', () => json({ ok: true, ...roster() }))
 
     route(scope, '/read', 'read route', (body) => {
@@ -1194,7 +1243,7 @@ export function apply(ctx, rawConfig) {
       await versions.flush()
       const version = await versions.readVersion(body.id, body.sha)
       if (version === undefined) return failure(404, 'not-found', 'that version does not exist')
-      const patch = { text: version.text ?? article.text }
+      const patch = { text: version.text ?? article.text, pendingChange: null }
       if (typeof version.title === 'string') patch.title = version.title
       if (version.style !== undefined && version.style !== null) patch.style = version.style
       const result = await articles.update(article.id, patch)
@@ -1207,27 +1256,24 @@ export function apply(ctx, rawConfig) {
       return json({ ok: true, article: result.article, ...roster() })
     })
 
-    route(scope, '/accept', 'accept route', async (body) => {
+    const review = async (body, undo) => {
       if (!isArticleId(body.id)) return failure(400, 'invalid-id', 'id must name one article')
       const article = articles.get(body.id)
       if (article === undefined) return failure(404, 'not-found', `no article "${body.id}"`)
-      if (article.pendingChange === undefined) return json({ ok: true, article, ...roster() })
-      const next = await articles.bind(body.id, { pendingChange: null })
-      return json({ ok: true, article: next, ...roster() })
-    })
-
-    route(scope, '/undo', 'undo route', async (body) => {
-      if (!isArticleId(body.id)) return failure(400, 'invalid-id', 'id must name one article')
-      const article = articles.get(body.id)
-      if (article === undefined) return failure(404, 'not-found', `no article "${body.id}"`)
+      if (body.rev !== undefined && body.rev !== article.rev) {
+        return json({ ok: false, code: 'conflict', article }, 409)
+      }
       if (article.pendingChange === undefined) return json({ ok: true, article, ...roster() })
       const result = await articles.update(body.id, {
-        text: article.pendingChange.before,
+        ...(undo ? { text: article.pendingChange.before } : {}),
         pendingChange: null,
-      })
-      if (!result.ok) return failure(409, 'conflict', 'the article changed while undoing')
+      }, article.rev)
+      if (!result.ok) return json({ ok: false, code: result.code, article: result.article }, 409)
       return json({ ok: true, article: result.article, ...roster() })
-    })
+    }
+
+    route(scope, '/accept', 'accept route', (body) => review(body, false))
+    route(scope, '/undo', 'undo route', (body) => review(body, true))
 
     route(scope, '/stop', 'stop route', (body) => {
       if (!isArticleId(body.id)) return failure(400, 'invalid-id', 'id must name one article')

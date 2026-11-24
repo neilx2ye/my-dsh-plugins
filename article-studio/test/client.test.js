@@ -144,7 +144,19 @@ test('the review diff marks removed and added text', () => {
   const plugin = definition.factory((name) => (name === 'react'
     ? { createElement: () => null, Fragment: 'Fragment', useState: () => [undefined, () => {}], useRef: () => ({ current: null }), useEffect: () => {}, useMemo: () => null }
     : { createPortal: () => null }))
-  const { diffSegments, diffStatsOf } = plugin.__diff
+  const { diffSegments, diffStatsOf, reviewGroups } = plugin.__diff
+
+  const stops = reviewGroups([
+    { op: 'del', text: '原文' }, { op: 'ins', text: '新文' },
+    { op: 'equal', text: '。\n\n' }, { op: 'ins', text: '新段' },
+  ])
+  assert.equal(stops.length, 3)
+  assert.equal(stops[0].edits.length, 2, 'a replacement is a single navigation stop')
+  assert.equal(stops[1].text, '。\n\n')
+  assert.equal(stops[2].edits[0].text, '新段')
+  const opening = reviewGroups(diffSegments('', '一个开头。'))
+  assert.equal(opening.length, 1)
+  assert.equal(opening[0].edits[0].op, 'ins')
 
   const before = '今天天气很好，我们去公园。'
   const after = '今天天气不错，我们去公园散步。'
@@ -168,4 +180,68 @@ test('the review diff marks removed and added text', () => {
   const rewritten = diffSegments('完全不同的开头。', '另一段文字。')
   assert.ok(rewritten.some((segment) => segment.op === 'del'))
   assert.ok(rewritten.some((segment) => segment.op === 'ins'))
+})
+
+
+test('image Markdown preserves the surrounding text and escapes alternative text', () => {
+  const { definition } = loadBundle()
+  const plugin = definition.factory((name) => name === 'react' ? { createElement: () => null } : { createPortal: () => null })
+  const { imageBlock, parseImage } = plugin.__images
+  const key = `${'a'.repeat(64)}.png`
+  const block = imageBlock([{ key, alt: '照片[一]\\二' }], '前文后文', 2)
+  assert.equal(`前文${block}后文`, `前文\n\n![照片\\[一\\]\\\\二](media/${key})\n\n后文`)
+  assert.equal(parseImage(block.trim()).alt, '照片[一]\\二')
+  assert.equal(parseImage(block.trim()).key, key)
+  assert.equal(parseImage('![照片](https://example.org/file.png)'), null)
+  assert.equal(parseImage('![照片](media/../config.png)'), null)
+  const alreadySpaced = imageBlock([{ key, alt: '' }], 'A\n\n\n\nB', 3)
+  assert.equal(alreadySpaced, `![](media/${key})`)
+})
+
+
+test('a pending upload matches only when both an upload and the article exist', () => {
+  const { definition } = loadBundle()
+  const plugin = definition.factory((name) => name === 'react' ? { createElement: () => null } : { createPortal: () => null })
+  const { uploadBelongsTo } = plugin.__images
+  // Opening the panel before an article loads leaves both sides absent; the
+  // cleanup used to treat that as a match and crash the whole main slot.
+  assert.equal(uploadBelongsTo(null, undefined), false, 'no upload and no article is not a match')
+  assert.equal(uploadBelongsTo(undefined, undefined), false)
+  assert.equal(uploadBelongsTo(null, 'a-1'), false)
+  assert.equal(uploadBelongsTo({ id: 'a-1' }, undefined), false)
+  assert.equal(uploadBelongsTo({ id: 'a-1' }, 'a-2'), false)
+  assert.equal(uploadBelongsTo({ id: 'a-1' }, 'a-1'), true)
+})
+
+
+test('document outline uses Markdown levels and source offsets without including fenced examples', () => {
+  const { definition } = loadBundle()
+  const plugin = definition.factory((name) => name === 'react' ? { createElement: () => null } : { createPortal: () => null })
+  const { markdownStructure, headingAt } = plugin.__outline
+  const source = [
+    '📝 前言', '', '# 概览 #', '   ### **重复**', '## 重复', '普通内容 # 非标题', '',
+    '````markdown', '# fenced', '```', '## still fenced', '````',
+    '~~~', '# also fenced', '~~~~', '', '第二章', '=====', '### [链接](https://example.org) 与 `代码`',
+    '    # indented code', '> ## quote', '- ## list item', '', '末节', '---',
+  ].join('\r\n')
+  const { headings, byLine, fences } = markdownStructure(source)
+  assert.deepEqual(Array.from(headings, (item) => item.label), ['概览', '重复', '重复', '第二章', '链接 与 代码', '末节'])
+  assert.deepEqual(Array.from(headings, (item) => item.level), [1, 3, 2, 1, 3, 2])
+  assert.deepEqual(Array.from(headings, (item) => item.depth), [0, 1, 1, 0, 1, 1])
+  assert.equal(headings[0].offset, source.indexOf('# 概览 #'))
+  assert.equal(headings[2].offset, source.indexOf('## 重复'))
+  assert.notEqual(headings[1].offset, headings[2].offset, 'duplicate labels keep distinct anchors')
+  assert.equal(byLine.get(16).offset, source.indexOf('第二章'))
+  assert.equal(byLine.get(16).length, 2)
+  assert.equal(fences.get(7).end, 11)
+  assert.equal(fences.get(12).end, 14)
+  assert.equal(markdownStructure('段落\n\n---\n```\n# unclosed fence').headings.length, 0)
+  assert.equal(markdownStructure('####### not-a-heading\n##\n#tag').headings.length, 0)
+
+  const y = [90, 130, 240, 300, 500, 720]
+  const topAt = (index) => y[index]
+  assert.equal(headingAt(headings, topAt, 60), null)
+  assert.equal(headingAt(headings, topAt, 130), headings[1].offset)
+  assert.equal(headingAt(headings, topAt, 299), headings[2].offset)
+  assert.equal(headingAt(headings, topAt, 900), headings[5].offset)
 })

@@ -17,6 +17,17 @@ column: the agent conversation is collapsed away, and you summon it at the caret
 - **Editor** — Markdown source in a contenteditable canvas, a live word count, and
   autosave with revision checks (an agent edit never silently overwrites your
   unsaved text; the panel asks which version to keep).
+- **Images** — use **插图** in the edit toolbar, paste a screenshot, or drag an
+  image onto the draft. PNG, JPEG, WebP and GIF are supported, up to 8 MiB each.
+  Edit the label between `![` and `]` to change the alternative text. **预览** shows
+  the image at the article's column width. Picture files live in the profile's
+  `article-studio/media/` directory, and git snapshots include referenced images
+  alongside the Markdown mirror. External publish targets receive the Markdown,
+  not the local image bytes; upload the `media/` folder separately when needed.
+- **Document outline** — switch the left rail from **文章** to **大纲**. Markdown
+  headings appear by level and update while you type. Click a heading to jump
+  there in editing, preview, or review, or click the article title to return to
+  the top. On narrow screens, open the rail with **导航**.
 - **Styling** — font family (宋体/黑体/楷体/等宽), size, line height, paragraph
   spacing, column width, alignment, first-line indent, and a paper / sepia / dark
   canvas. The agent can apply the same controls through `article_style`.
