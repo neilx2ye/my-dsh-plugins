@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Shopify GraphQL",
+    "description": "Run Shopify Admin GraphQL from chat under your control: read queries execute directly with a read-only token, mutations wait for approval in a side panel that explains the operation, and any execution can be saved as a reusable tool.",
+    "detail": "docs/DETAIL.md"
+  }
+}

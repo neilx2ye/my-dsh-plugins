@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Shopify GraphQL",
+    "description": "在对话里运行 Shopify Admin GraphQL：只读查询用只读 token 直接执行；写操作在侧边面板里说明清楚后由你审批；每次执行都可以保存成可复用工具。",
+    "detail": "docs/DETAIL.md"
+  }
+}

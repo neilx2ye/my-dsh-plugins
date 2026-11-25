@@ -1,0 +1,4 @@
+- insert:
+    - id: codex-fast-mode
+      name: '@local/codex-fast-mode'
+      config: {}

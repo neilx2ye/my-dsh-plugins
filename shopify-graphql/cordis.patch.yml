@@ -1,0 +1,13 @@
+- insert:
+    - id: shopify-graphql
+      name: '@local/shopify-graphql'
+      config:
+        # Preferred: configure stores in the per-user runtime file
+        #   $DSH_HOME/shopify-graphql/stores.yaml
+        # (see docs/stores.example.yaml). A store configured there is visible
+        # only to that DSH user. The list below is a bundle-level fallback.
+        stores: []
+        # stateDir defaults to $DSH_HOME/shopify-graphql.
+        stateDir: ''
+        # Optional: set fetchTimeoutMs (default 30000) and an Infisical block here
+        # when the stores are configured below instead of in stores.yaml.

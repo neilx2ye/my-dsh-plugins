@@ -1,0 +1,32 @@
+# Copy this file to $DSH_HOME/shopify-graphql/stores.yaml.
+# It is per system user: a store configured here is not visible to another user.
+stores:
+  - id: example-store
+    domain: your-store.myshopify.com
+    apiVersion: "2026-04"
+    label: Example store
+    # Read token: stored on this device through ctx.credentials (or the process
+    # environment). Queries use it directly, with no network round-trip to a
+    # secret manager.
+    readToken:
+      provider: local
+      ref: SHOPIFY_EXAMPLE_READ_TOKEN
+    # Write token: read on demand from Infisical after the store policy passes
+    # and before the approval prompt. The secret path is
+    #   /stores/example-store/shopify
+    # and the key is ADMIN_ACCESS_TOKEN.
+    writeToken:
+      provider: infisical
+      service: shopify
+      key: ADMIN_ACCESS_TOKEN
+
+infisical:
+  baseUrl: https://app.infisical.com
+  projectId: your-infisical-project-id
+  environment: prod
+  secretPathPrefix: /stores
+  # The machine identity is resolved from the local credential store (or env).
+  clientIdRef: INFISICAL_CLIENT_ID
+  clientSecretRef: INFISICAL_CLIENT_SECRET
+  cacheTtlMs: 30000
+  requestTimeoutMs: 10000

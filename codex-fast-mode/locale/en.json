@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Codex fast mode",
+    "description": "Toggle Codex fast mode in the OpenAI Codex model menu. It applies only to the current session, starts off, and resets on restart. Availability depends on the model and account; fast mode may use quota faster."
+  }
+}

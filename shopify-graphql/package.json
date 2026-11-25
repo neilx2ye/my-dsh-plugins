@@ -1,0 +1,40 @@
+{
+  "name": "@local/shopify-graphql",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Governed Shopify Admin GraphQL for DeepSeek Harness: read queries run directly, mutations wait for side-panel approval, and executions can be saved as reusable tools.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md"
+  ],
+  "dependencies": {
+    "graphql": "^16.9.0",
+    "yaml": "^2.5.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}
