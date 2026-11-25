@@ -1,6 +1,6 @@
 {
   "name": "@local/codex-fast-mode",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Session-local Fast Mode for the DSH OpenAI Codex route",

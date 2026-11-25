@@ -20,7 +20,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `article-studio/` | `@local/article-studio` | 0.3.0 | A writing desk in the sidebar: articles with autosave and local git history, typography controls, inline images that stay editable in place (click to select, Delete to remove with undo, **图片源码** for the Markdown), a heading outline, and a writing partner summoned at the caret |
 | `cache-cleaner/` | `@local/cache-cleaner` | 0.1.1 | Settings page that reports and clears **archived** session logs, their projection checkpoints, and canvas artifacts across every DSH home on the machine; unarchived and live sessions are never deleted |
 | `feishu-bridge/` | `@local/feishu-bridge` | 0.1.2 | Talk to the Harness from Feishu over a WebSocket long connection: one durable Session per chat, streamed replies, no public callback URL |
-| `codex-fast-mode/` | `@local/codex-fast-mode` | 0.2.0 | Per-conversation Fast Mode switch for the OpenAI Codex route; requires DSH 0.2.2-rc.5 |
+| `codex-fast-mode/` | `@local/codex-fast-mode` | 0.2.1 | Per-conversation Fast Mode switch shown when an OpenAI Codex model is selected; supports Web subpaths and requires DSH 0.2.2-rc.5 |
 | `shopify-graphql/` | `@local/shopify-graphql` | 0.1.0 | Shopify Admin GraphQL with per-user store configuration, read-only queries, and explicit approval for mutations |
 
 Each plugin is a plain npm package with a `dsh.bundle.patch` layer. Releases attach
@@ -49,7 +49,7 @@ https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-workspace-uplo
 https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-workspace-download-0.2.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-article-studio-0.3.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-cache-cleaner-0.1.1.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-codex-fast-mode-0.2.0.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.32.0/local-codex-fast-mode-0.2.1.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-shopify-graphql-0.1.0.tgz
 ```
 
@@ -75,7 +75,7 @@ dsh plugin --profile web add \
   https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-workspace-download-0.2.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-article-studio-0.3.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-cache-cleaner-0.1.1.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-codex-fast-mode-0.2.0.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.32.0/local-codex-fast-mode-0.2.1.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.31.0/local-shopify-graphql-0.1.0.tgz
 ```
 

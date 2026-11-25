@@ -49,8 +49,9 @@ window.__ModuleLoader__.load({
     `;
 
     async function load(sessionId, enabled, signal) {
-      const path = `/api/codex-fast-mode?${new URLSearchParams({ sessionId })}`;
-      const response = await fetch(path, {
+      const url = new URL('api/codex-fast-mode', document.baseURI);
+      url.searchParams.set('sessionId', sessionId);
+      const response = await fetch(url, {
         credentials: 'same-origin', signal, cache: 'no-store',
         ...(enabled === undefined ? {} : {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled }),
