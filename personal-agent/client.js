@@ -623,14 +623,14 @@ window.__ModuleLoader__.load({
 /* Track and thumb match the shipped switch exactly: 36x20 pill, 2px inset,
    16px thumb, so this row sits beside the teamwork row without a visual seam. */
 .pagent-delegation-switch{position:relative;flex:none;box-sizing:border-box;width:36px;height:20px;padding:2px;border:0;border-radius:999px;background:rgba(255,255,255,.16);cursor:pointer;transition:all .12s ease}
-.pagent-delegation-switch[data-on="true"]{background:var(--dsw-alias-brand-primary,#1d4ed8)}
+.pagent-delegation-switch[data-on="true"]{background:rgb(249,250,251)}
 .pagent-delegation-switch:disabled{opacity:.6;cursor:default}
 .pagent-delegation-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#1d4ed8);outline-offset:2px}
 /* The thumb needs clip-path: this absolutely positioned span renders a
    border-radius as a rounded square in Chromium, while the shipped control's
    thumb stays a circle. */
 .pagent-delegation-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;clip-path:circle(50%);background:rgb(173,178,184);transition:transform .12s ease}
-.pagent-delegation-switch[data-on="true"] .pagent-delegation-knob{transform:translateX(16px);background:#fff}
+.pagent-delegation-switch[data-on="true"] .pagent-delegation-knob{transform:translateX(16px);background:rgb(15,17,21)}
 .pagent-working-stalled{color:var(--dsw-alias-label-warning,var(--dsw-alias-label-secondary));font-weight:500}
 .pagent-working-task{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}

@@ -13,7 +13,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `mcp-settings/` | `@local/mcp-settings` | 0.1.1 | Manage MCP servers from DSH Web |
 | `user-switcher/` | `@local/user-switcher` | 0.2.2 | Linux: choose the account every Bash command runs as (`setpriv`), and open each account its own DSH instance with its own home |
 | `web-push-notify/` | `@local/web-push-notify` | 1.3.0 | Web Push task-completion notifications (Push API + Service Worker); notifies even while the page is in view, entry under **More** |
-| `personal-agent/` | `@local/personal-agent` | 0.6.10 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, selected multi-agent group chats, and `/new` for a clean start that archives the identity's earlier conversations only after the new one is open; the `personal` preset is reserved for identity chats; subagents are a per-conversation switch in the model menu (off by default), `message_identity` is not registered, and group chats keep `ask_identity`; a turn still running after two quiet minutes names the tool it is on |
+| `personal-agent/` | `@local/personal-agent` | 0.6.11 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, selected multi-agent group chats, and `/new` for a clean start that archives the identity's earlier conversations only after the new one is open; the `personal` preset is reserved for identity chats; subagents are a per-conversation switch in the model menu (off by default), `message_identity` is not registered, and group chats keep `ask_identity`; a turn still running after two quiet minutes names the tool it is on |
 | `system-usage/` | `@local/system-usage` | 1.1.0 | CPU, memory, and root-disk meter across the sidebar foot, with a hover readout and a click-to-refresh sample |
 | `workspace-upload/` | `@local/workspace-upload` | 0.3.0 | Upload files or whole folders into any workspace subfolder from the Files page, with live progress, replace/cancel prompts on name conflicts, and name-safe publishing |
 | `workspace-download/` | `@local/workspace-download` | 0.2.0 | Download a previewed file, any folder as ZIP (with an optional .git), or the whole workspace from the Files side panel, streamed by the Host |
@@ -41,7 +41,7 @@ https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-git-explorer-0
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-mcp-settings-0.1.1.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-user-switcher-0.2.2.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.28.0/local-personal-agent-0.6.10.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.29.0/local-personal-agent-0.6.11.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-system-usage-1.1.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-upload-0.3.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-download-0.2.0.tgz
@@ -65,7 +65,7 @@ dsh plugin --profile web add \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-mcp-settings-0.1.1.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-user-switcher-0.2.2.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.28.0/local-personal-agent-0.6.10.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.29.0/local-personal-agent-0.6.11.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-system-usage-1.1.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-upload-0.3.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-download-0.2.0.tgz \
