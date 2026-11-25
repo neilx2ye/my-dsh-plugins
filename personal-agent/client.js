@@ -592,12 +592,14 @@ window.__ModuleLoader__.load({
 .pagent-working-dots::after{content:'…';animation:pagent-working-dots 1.2s steps(3,end) infinite}
 .pagent-delegation-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:34px;padding:0 8px;border-radius:var(--dsw-radius-md,8px);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px}
 .pagent-delegation-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pagent-delegation-switch{position:relative;flex:none;width:32px;height:18px;padding:0;border:0;border-radius:9px;background:var(--dsw-alias-fill-quaternary,rgba(127,127,127,.35));cursor:pointer;transition:background .15s ease}
+/* Track and thumb match the shipped switch exactly: 36x20 pill, 2px inset,
+   16px thumb, so this row sits beside the teamwork row without a visual seam. */
+.pagent-delegation-switch{position:relative;flex:none;box-sizing:border-box;width:36px;height:20px;padding:2px;border:0;border-radius:999px;background:rgba(255,255,255,.16);cursor:pointer;transition:all .12s ease}
 .pagent-delegation-switch[data-on="true"]{background:var(--dsw-alias-brand-primary,#1d4ed8)}
 .pagent-delegation-switch:disabled{opacity:.6;cursor:default}
 .pagent-delegation-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#1d4ed8);outline-offset:2px}
-.pagent-delegation-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s ease}
-.pagent-delegation-switch[data-on="true"] .pagent-delegation-knob{transform:translateX(14px)}
+.pagent-delegation-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:rgb(173,178,184);transition:transform .12s ease}
+.pagent-delegation-switch[data-on="true"] .pagent-delegation-knob{transform:translateX(16px);background:#fff}
 .pagent-working-stalled{color:var(--dsw-alias-label-warning,var(--dsw-alias-label-secondary));font-weight:500}
 .pagent-working-task{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
