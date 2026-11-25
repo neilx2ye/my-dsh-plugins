@@ -43,6 +43,7 @@ import {
   DM_WAIT_DEADLINE_MS,
   WAIT_CANCELLED,
 } from './lib/direct-message.js';
+import { createActivityLog } from './lib/activity.js';
 import { conversationsToClear } from './lib/conversations.js';
 import {
   DELEGATION_EVENT,
@@ -712,6 +713,18 @@ export function apply(ctx, rawConfig) {
   const profile = ctx.get('profileContext');
   const dataDir = profile === undefined ? join(dshHome(), 'personal-agent') : join(profile.dir, 'personal-agent');
   const logger = ctx.logger;
+
+  /**
+   * Last observable activity per Session. The working bubble judges a turn by
+   * silence, never by how long it has been running; see `lib/activity.js`.
+   */
+  const activity = createActivityLog();
+
+  // Both halves of the activity signal: durable events cover tool calls,
+  // results, steps, and settled replies, while model tokens are transient
+  // stream frames that never append a durable event.
+  ctx.on('session/event', (session) => activity.touch(session?.id));
+  ctx.on('agent/assistant-stream', ({ agent }) => activity.touch(agent?.session?.id));
 
   /**
    * One identity plus every path it owns.
@@ -2209,6 +2222,10 @@ export function apply(ctx, rawConfig) {
         profile: profile?.name ?? null,
         preset: PRESET_ID,
         autoOpen: settings.autoOpen,
+        // Host clock and per-Session activity, so the browser can tell a long
+        // working turn from a silent one without trusting the client clock.
+        now: Date.now(),
+        sessionActivity: activity.snapshot(),
         projects: listProjects(),
         groups: [...groups.values()]
           .map((group) => {

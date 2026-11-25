@@ -72,6 +72,34 @@ window.__ModuleLoader__.load({
      */
     const STALL_AFTER_MS = 120_000;
 
+    /**
+     * Whether the identity's running work has gone quiet long enough to warn
+     * about. Activity, not elapsed time, decides: a turn that keeps streaming
+     * tokens or moving between tools stays active however long it runs. The
+     * Host publishes both the clock and each Session's last observed activity,
+     * so this never compares the browser clock with the Host one, and a turn
+     * with no observed activity is left alone instead of being accused.
+     * @param options.now - Host wall-clock ms the state snapshot was built at.
+     * @param options.activity - Session id -> last observed activity ms.
+     * @param options.running - the identity's running Session rows.
+     * @param options.quietMs - silence threshold.
+     * @returns whether the bubble should say the turn may be stuck.
+     */
+    function isTurnQuiet(options) {
+      const now = options?.now;
+      if (typeof now !== 'number' || !Number.isFinite(now)) return false;
+      const running = Array.isArray(options?.running) ? options.running : [];
+      const activity = options?.activity ?? {};
+      const quietMs = typeof options?.quietMs === 'number' ? options.quietMs : STALL_AFTER_MS;
+      let last = 0;
+      for (const session of running) {
+        const at = session === null || session === undefined ? undefined : activity[session.id];
+        if (typeof at === 'number' && at > last) last = at;
+      }
+      if (last === 0) return false;
+      return now - last >= quietMs;
+    }
+
     /** Per-conversation subagent permission. */
     const DELEGATION_URL = 'api/personal-agent/delegation';
 
@@ -210,8 +238,8 @@ window.__ModuleLoader__.load({
       'progress.other': '+{count} other sessions',
       'delegation.label': 'Allow subagents',
       'progress.tool': 'Using {tool}',
-      'progress.stalled': 'No result after 2 minutes — it may be stuck',
-      'progress.stalledTool': 'No result after 2 minutes — stuck on {tool}',
+      'progress.stalled': 'Nothing new for 2 minutes — it may be stuck',
+      'progress.stalledTool': 'No activity for 2 minutes — stuck on {tool}',
       'progress.completed': '{done}/{total} done',
       'groups.title': 'Groups',
       'groups.create': 'Start a group chat',
@@ -359,8 +387,8 @@ window.__ModuleLoader__.load({
       'progress.other': '另外 {count} 个会话',
       'delegation.label': '允许开子代理',
       'progress.tool': '正在使用 {tool}',
-      'progress.stalled': '两分钟没有结果了，可能卡住了',
-      'progress.stalledTool': '两分钟没有结果了 —— 停在 {tool}',
+      'progress.stalled': '两分钟没有新动静了，可能卡住了',
+      'progress.stalledTool': '两分钟没有新动静了 —— 停在 {tool}',
       'progress.completed': '{done}/{total} 完成',
       'groups.title': '群聊',
       'groups.create': '开始群聊',
@@ -598,7 +626,10 @@ window.__ModuleLoader__.load({
 .pagent-delegation-switch[data-on="true"]{background:var(--dsw-alias-brand-primary,#1d4ed8)}
 .pagent-delegation-switch:disabled{opacity:.6;cursor:default}
 .pagent-delegation-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#1d4ed8);outline-offset:2px}
-.pagent-delegation-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:rgb(173,178,184);transition:transform .12s ease}
+/* The thumb needs clip-path: this absolutely positioned span renders a
+   border-radius as a rounded square in Chromium, while the shipped control's
+   thumb stays a circle. */
+.pagent-delegation-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;clip-path:circle(50%);background:rgb(173,178,184);transition:transform .12s ease}
 .pagent-delegation-switch[data-on="true"] .pagent-delegation-knob{transform:translateX(16px);background:#fff}
 .pagent-working-stalled{color:var(--dsw-alias-label-warning,var(--dsw-alias-label-secondary));font-weight:500}
 .pagent-working-task{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;
@@ -3903,18 +3934,15 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       // Which tool the running turn is on: hidden process still leaves the tool
       // name visible, so a long run is not just an anonymous spinner.
       const [workingTool, setWorkingTool] = React.useState('');
-      // A quiet turn is normal; a turn quiet for two minutes is not. Only then
-      // does the bubble add a line, so an ordinary wait stays uncluttered.
-      const [stalled, setStalled] = React.useState(false);
-      React.useEffect(() => {
-        if (!working) {
-          setStalled(false);
-          return undefined;
-        }
-        setStalled(false);
-        const timer = setTimeout(() => setStalled(true), STALL_AFTER_MS);
-        return () => clearTimeout(timer);
-      }, [working, sessionId]);
+      // A quiet turn is normal; a turn with no activity for two minutes is
+      // not. Only then does the bubble add a line, so an ordinary wait stays
+      // uncluttered and a long turn that keeps working never gets one.
+      const stalled = isTurnQuiet({
+        now: state?.now,
+        activity: state?.sessionActivity,
+        running,
+        quietMs: STALL_AFTER_MS,
+      });
       React.useEffect(() => {
         if (!working) {
           setWorkingTool('');
@@ -4346,6 +4374,8 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       /** Pure group-composer image helpers, exported for the node test suite. */
       __images: { groupImageMediaType, imageBase64Of, imageBytesOf },
       __conversations: { followFreshConversation },
+      /** Pure working-bubble stalls rule, exported for the node test suite. */
+      __progress: { isTurnQuiet },
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { en: EN, zh: ZH }), 'personal-agent: dictionaries');
 

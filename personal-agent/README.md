@@ -426,11 +426,15 @@ back for inspection.
 
 While an identity Session is running, a working bubble joins the end of the
 transcript with the identity's avatar and a rotating line such as
-`正在忙活…`, plus the active todo when one exists. If the turn is still running
-two minutes later, the bubble adds one flat line naming what it is on —
-`两分钟没有结果了 —— 停在 bash` — so a stalled turn is never just an animated
-ellipsis. There is no live timer and no click-through: the line appears once, at
-the threshold, and disappears with the turn. It is part of the message
+`正在忙活…`, plus the active todo when one exists. A turn is judged by activity,
+never by how long it has been running: the Host records when each Session last
+did anything observable — durable events such as tool calls and steps, and the
+transient stream frames that never reach the log — and only two silent minutes
+add one flat line naming what it is on —
+`两分钟没有新动静了 —— 停在 bash`. A long turn that keeps streaming or moving
+between tools therefore stays quiet. There is no live timer and no
+click-through: the line appears once the work goes silent at the threshold, and
+disappears as soon as it resumes or the turn ends. It is part of the message
 flow, not a panel floating over it: it scrolls away with the conversation, so
 scrolling back never has it cover earlier messages, and it is only pulled into
 view while the reader already follows the tail. It replaces the shipped running
@@ -444,7 +448,7 @@ All of these are owner-admitted by `connection.fetch` before the handler runs:
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/personal-agent/state` | Identities, homes, memories, editable flag |
+| `GET /api/personal-agent/state` | Identities, homes, memories, editable flag, Host clock, and per-Session last activity |
 | `POST /api/personal-agent/identity` | Create or update one identity through the config editor |
 | `PUT /api/personal-agent/memory` | Replace one identity's memory |
 | `POST /api/personal-agent/open` | Return an identity's or project's newest Session (`identityId` or `workspaceId`) |
