@@ -1425,16 +1425,11 @@ export function apply(ctx, rawConfig) {
               });
             }
           }
-          // A private identity conversation can reach the other identities
-          // directly. A group has its own participant roster instead, and a
-          // one-shot direct-message child answers only the message it got.
-          if (group === undefined && records.length > 1 && agent.session.origin !== 'subagent') {
-            scoped.systemPrompt.section({
-              name: 'personal-agent:peers',
-              order: PEER_SECTION_ORDER,
-              text: () => composePeerSection(record.identity, records.map((sibling) => sibling.identity)),
-            });
-          }
+          // No peer roster and no `message_identity`: a private identity
+          // conversation may not reach another identity. Reaching a peer meant
+          // spawning a child and waiting on it, and a child that never answered
+          // froze the whole conversation. Group chats keep their own
+          // `ask_identity` route.
         });
         installs.set(agent, fiber);
       } catch (error) {
@@ -1694,15 +1689,10 @@ export function apply(ctx, rawConfig) {
       when: ({ agent }) =>
         whenIdentity({ agent }) && agent.session.origin !== 'subagent' && groupForAgent(agent, ctx) === undefined,
     });
-    // A direct message needs a private identity conversation. A group already
-    // has its own channel, and a relative child answering a direct message must
-    // not start another one, so neither may use the tool.
-    scope.tools.register(buildMessageIdentityTool(recordForExec, sendDirectMessage), {
-      when: ({ agent }) =>
-        whenIdentity({ agent }) &&
-        groupForAgent(agent, ctx) === undefined &&
-        agent.session.origin !== 'subagent',
-    });
+    // `message_identity` is intentionally not registered: a private identity
+    // conversation must not spawn a child agent and wait on it. The builder and
+    // `sendDirectMessage` stay in place, with their tests, so restoring direct
+    // messages is one registration away.
     scope.tools.register(
       buildAskIdentityTool((sessionId, agent) => groups.get(sessionId) ?? groupForAgent(agent, ctx), askGroupGuest),
       { when: whenGroupHost },
@@ -2238,7 +2228,7 @@ export function apply(ctx, rawConfig) {
           includeInPrompt: settings.memory.includeInPrompt,
           maxBytes: settings.memory.maxBytes,
         },
-        tools: ['remember', 'recall', 'new_conversation', 'ask_identity', 'message_identity'],
+        tools: ['remember', 'recall', 'new_conversation', 'ask_identity'],
         editable: ctx.get('configEditor') !== undefined && ctx.fiber?.entry !== undefined,
       };
     }

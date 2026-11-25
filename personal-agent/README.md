@@ -27,7 +27,7 @@ other profile on the device — and every device-wide setting — is untouched.
 | Default agent preset | `standard` | Unchanged; identity conversations request `personal` explicitly |
 | Memory | Per conversation | One note file per identity, shared by that identity's conversations |
 | Workspace | A list of projects you choose from | Unchanged for projects; each identity adds one extra workspace group for its home |
-| Tools | — | `remember`, `recall`, and `message_identity`, only visible inside identity homes |
+| Tools | — | `remember` and `recall`, only visible inside identity homes; no subagents and no direct messages |
 
 The Harness data model still binds sessions to a directory, so each identity has
 one workspace underneath. It is presentation, not deletion: the Workspace
@@ -291,7 +291,6 @@ workspace conversations; it cannot re-enable Personal there.
 | `remember` | Append one durable fact to the calling identity's memory |
 | `recall` | Search or read the calling identity's memory |
 | `new_conversation` | Start a blank context after this turn; the earlier conversation stays in history |
-| `message_identity` | Send a private 1:1 direct message to another identity and return its reply |
 | `ask_identity` | Legacy groups only: let the host ask one guest identity for a reply |
 
 They are registered at the profile's Host scope and resolve the identity from
@@ -372,29 +371,23 @@ uses the same rule: the session title and preset controls are hidden, and the
 identity's avatar/name or the group name is shown instead. Project heroes and
 headers are unchanged.
 
-### Direct messages between identities
+### No subagents and no direct messages
 
-Every private identity conversation knows the other identities in the profile:
-its prompt lists their names, ids, and roles, and explains how to reach them.
-The `message_identity` tool starts one **private 1:1 message** — pass the other
-identity's id or exact name and what you need:
+A private identity conversation runs alone. It cannot spawn a child agent: the
+`personal` preset ships without the delegation tools (`subagent`,
+`subagent_fork`, `subagent_control`, `workflow`), and the bundle does not
+register `message_identity`.
 
-- The target answers as itself. The Host runs a one-shot child in that
-  identity's home, so its persona, memory, and tools apply, and returns the
-  reply to the caller in the same turn. The caller can then tell the user what
-  the other identity said. No group is created and no third identity sees the
-  exchange.
-- The pair's thread is saved under
-  `<profile>/personal-agent/dms/<a>--<b>/transcript.json`, and the recent
-  exchange is carried into the next direct message, so two identities can keep
-  a conversation across calls. The file is bounded to the last 400 messages.
-- The tool is not available in project sessions, inside a group (which already
-  has its own channel), or inside the one-shot child that is answering a
-  direct message. A direct message therefore cannot start an endless chain of
-  agents messaging each other.
-- One message is capped at 8,000 characters and one exchange at 180 seconds.
-  There is no separate direct-message page yet: the human sees the relay in the
-  caller's conversation, and the target's own conversation is untouched.
+What that used to cost is why it is gone. Reaching another identity meant
+starting a one-shot child in that identity's home and waiting for it inside the
+same turn. A child that stalled left the caller sitting on a silent tool call
+with no deadline and no way to stop it — indistinguishable from a frozen
+assistant. Since 0.6.7 the wait is not offered at all.
+
+Group chats are unchanged: the group host still reaches members through
+`ask_identity`, the bundle's own route, which does not depend on the
+model-facing delegation tools. Earlier `dms/` transcripts stay on disk but
+nothing writes to them any more.
 
 ### Unread badges
 
@@ -428,7 +421,11 @@ back for inspection.
 
 While an identity Session is running, a working bubble joins the end of the
 transcript with the identity's avatar and a rotating line such as
-`正在忙活…`, plus the active todo when one exists. It is part of the message
+`正在忙活…`, plus the active todo when one exists. If the turn is still running
+two minutes later, the bubble adds one flat line naming what it is on —
+`两分钟没有结果了 —— 停在 bash` — so a stalled turn is never just an animated
+ellipsis. There is no live timer and no click-through: the line appears once, at
+the threshold, and disappears with the turn. It is part of the message
 flow, not a panel floating over it: it scrolls away with the conversation, so
 scrolling back never has it cover earlier messages, and it is only pulled into
 view while the reader already follows the tail. It replaces the shipped running

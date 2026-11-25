@@ -108,32 +108,12 @@
                   thresholdChars: 8192
                   headChars: 4096
                   tailChars: 1024
-          - id: delegation
-            name: cordis:group
-            group: true
-            isolate:
-              workflowEngine: true
-            config:
-              - id: tool-subagent-control
-                name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent
-                name: '@deepseek-ai/dsh-tool-subagent'
-                config:
-                  provider: spawn
-                  toolName: subagent
-                  modelSelection: true
-                  modelDiscovery: true
-              - id: tool-subagent-fork
-                name: '@deepseek-ai/dsh-tool-subagent'
-                config:
-                  provider: fork
-                  toolName: subagent_fork
-              - id: workflow-ptc
-                name: '@deepseek-ai/dsh-workflow-ptc'
-                config:
-                  provider: spawn
-              - id: tool-workflow
-                name: '@deepseek-ai/dsh-tool-workflow'
+          # No `delegation` group here on purpose: a single identity must not
+          # spawn subagents. Waiting on a child is exactly what left a
+          # conversation frozen with nothing on screen. Group chat still reaches
+          # other identities through the bundle's own `ask_identity` tool, which
+          # does not depend on these model-facing delegation tools, so a group
+          # keeps working as before.
           - id: tool-ask-user
             name: '@deepseek-ai/dsh-tool-ask-user'
           - id: tool-todo

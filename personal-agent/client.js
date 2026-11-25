@@ -65,6 +65,13 @@ window.__ModuleLoader__.load({
     /** Clear unread assistant messages for an identity or group. */
     const READ_URL = 'api/personal-agent/read';
 
+    /**
+     * How long a running turn may stay silent before the working bubble adds a
+     * line about it. Ordinary waits stay quiet; this is the "is it stuck?"
+     * threshold, not a live timer.
+     */
+    const STALL_AFTER_MS = 120_000;
+
     /** Local visibility preference for the identity chat work details. */
     const THINKING_KEY = 'personal-agent:show-thinking';
     let thinkingVisible = false;
@@ -199,8 +206,8 @@ window.__ModuleLoader__.load({
       'progress.idle': 'No active task',
       'progress.other': '+{count} other sessions',
       'progress.tool': 'Using {tool}',
-      'progress.elapsed': '{time} elapsed',
-      'progress.showProcess': 'Show process',
+      'progress.stalled': 'No result after 2 minutes — it may be stuck',
+      'progress.stalledTool': 'No result after 2 minutes — stuck on {tool}',
       'progress.completed': '{done}/{total} done',
       'groups.title': 'Groups',
       'groups.create': 'Start a group chat',
@@ -347,8 +354,8 @@ window.__ModuleLoader__.load({
       'progress.idle': '暂无进行中的任务',
       'progress.other': '另外 {count} 个会话',
       'progress.tool': '正在使用 {tool}',
-      'progress.elapsed': '已 {time}',
-      'progress.showProcess': '看过程',
+      'progress.stalled': '两分钟没有结果了，可能卡住了',
+      'progress.stalledTool': '两分钟没有结果了 —— 停在 {tool}',
       'progress.completed': '{done}/{total} 完成',
       'groups.title': '群聊',
       'groups.create': '开始群聊',
@@ -578,12 +585,10 @@ window.__ModuleLoader__.load({
 .pagent-working-bubble{box-sizing:border-box;display:flex;flex-direction:column;gap:3px;align-self:flex-start;max-width:100%;padding:9px 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.6}
 .pagent-working-text{display:inline-flex;align-items:center;gap:1px}
 .pagent-working-dots::after{content:'…';animation:pagent-working-dots 1.2s steps(3,end) infinite}
+.pagent-working-stalled{color:var(--dsw-alias-label-warning,var(--dsw-alias-label-secondary));font-weight:500}
 .pagent-working-task{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
 @keyframes pagent-working-dots{0%,20%{content:'.'}40%{content:'..'}60%,100%{content:'...'}}
-.pagent-working-toggle{appearance:none;align-self:flex-start;margin-top:2px;padding:1px 7px;border:.5px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:1.5;cursor:pointer}
-.pagent-working-toggle:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
-.pagent-working-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .pagent-identity-group{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}
 .pagent-identity-group:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12));color:var(--dsw-alias-label-primary)}
 .pagent-identity-group:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
@@ -3807,18 +3812,26 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
               .map((id) => sessionList?.projectionsBySession?.[id]?.values?.todos)
               .find((items) => Array.isArray(items) && items.length > 0) ?? []);
       const working = running.length > 0;
-      // How long the current turn has been working, and which tool it is on:
-      // hidden process still leaves the clock and the tool name visible, so a
-      // long run never looks frozen.
-      const [workingSince, setWorkingSince] = React.useState(null);
+      // Which tool the running turn is on: hidden process still leaves the tool
+      // name visible, so a long run is not just an anonymous spinner.
       const [workingTool, setWorkingTool] = React.useState('');
+      // A quiet turn is normal; a turn quiet for two minutes is not. Only then
+      // does the bubble add a line, so an ordinary wait stays uncluttered.
+      const [stalled, setStalled] = React.useState(false);
       React.useEffect(() => {
         if (!working) {
-          setWorkingSince(null);
+          setStalled(false);
+          return undefined;
+        }
+        setStalled(false);
+        const timer = setTimeout(() => setStalled(true), STALL_AFTER_MS);
+        return () => clearTimeout(timer);
+      }, [working, sessionId]);
+      React.useEffect(() => {
+        if (!working) {
           setWorkingTool('');
           return undefined;
         }
-        setWorkingSince(Date.now());
         let lastTool = null;
         const readTool = () => {
           const scope = document.querySelector('[data-conversation-content]');
@@ -3840,16 +3853,6 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
         const timer = setInterval(readTool, 1000);
         return () => clearInterval(timer);
       }, [working, sessionId]);
-      const [workingClock, setWorkingClock] = React.useState(0);
-      React.useEffect(() => {
-        if (workingSince === null) {
-          setWorkingClock(0);
-          return undefined;
-        }
-        setWorkingClock(Math.floor((Date.now() - workingSince) / 1000));
-        const timer = setInterval(() => setWorkingClock(Math.floor((Date.now() - workingSince) / 1000)), 1000);
-        return () => clearInterval(timer);
-      }, [workingSince]);
       const [busyIndex, setBusyIndex] = React.useState(0);
       React.useEffect(() => {
         if (!working) return undefined;
@@ -3914,7 +3917,6 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
       const active = todos.find((item) => item.status === 'in_progress') ?? null;
       const otherRunning = Math.max(0, running.length - (currentRunning ? 1 : 0));
       const busyKey = ['progress.busy1', 'progress.busy2', 'progress.busy3'][busyIndex] ?? 'progress.busy1';
-      const clockText = `${Math.floor(workingClock / 60)}:${String(workingClock % 60).padStart(2, '0')}`;
       return ReactDOM.createPortal(h(
         'div',
         {
@@ -3940,24 +3942,18 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
             'div',
             { className: 'pagent-working-bubble' },
             h('span', { className: 'pagent-working-text' }, tr(busyKey), h('span', { className: 'pagent-working-dots', 'aria-hidden': true })),
-            h(
-              'span',
-              { className: 'pagent-working-task' },
-              (workingTool === '' ? '' : `${tr('progress.tool', { tool: workingTool })} · `) + tr('progress.elapsed', { time: clockText }),
-            ),
+            workingTool === '' ? null : h('span', { className: 'pagent-working-task' }, tr('progress.tool', { tool: workingTool })),
+            stalled
+              ? h(
+                  'span',
+                  { className: 'pagent-working-task pagent-working-stalled' },
+                  workingTool === '' ? tr('progress.stalled') : tr('progress.stalledTool', { tool: workingTool }),
+                )
+              : null,
             active?.content ? h('span', { className: 'pagent-working-task' }, active.content) : null,
             otherRunning > 0
               ? h('span', { className: 'pagent-working-task' }, tr('progress.other', { count: otherRunning }))
               : null,
-            h(
-              'button',
-              {
-                type: 'button',
-                className: 'pagent-working-toggle',
-                onClick: () => setThinkingVisible(true),
-              },
-              tr('progress.showProcess'),
-            ),
           ),
         ),
       ), workingHost);
