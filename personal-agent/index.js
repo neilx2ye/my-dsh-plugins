@@ -45,6 +45,11 @@ import {
 } from './lib/direct-message.js';
 import { conversationsToClear } from './lib/conversations.js';
 import {
+  DELEGATION_EVENT,
+  delegationDenyFilter,
+  readDelegationChoice,
+} from './lib/delegation.js';
+import {
   Config,
   composeIdentitySection,
   composeMemorySection,
@@ -66,6 +71,8 @@ export { Config };
 
 /** Identity state and manager payload. */
 const STATE_PATH = '/api/personal-agent/state';
+/** Per-conversation subagent permission for one identity chat. */
+const DELEGATION_PATH = '/api/personal-agent/delegation';
 /** Create or update one identity through the profile config editor. */
 const IDENTITY_PATH = '/api/personal-agent/identity';
 /** Remove one identity: archive its conversations, hide its workspace, move its data. */
@@ -202,6 +209,19 @@ async function writeState(file, states, logger) {
  * @param status - HTTP status.
  * @returns the response.
  */
+/**
+ * Release a disposer that may be a plain function or a disposable object.
+ * @param handle - value returned by a scoped injection or a service method.
+ */
+function releaseDisposable(handle) {
+  if (handle === null || handle === undefined) return;
+  if (typeof handle === 'function') {
+    handle();
+    return;
+  }
+  if (typeof handle.dispose === 'function') void handle.dispose();
+}
+
 function json(body, status = 200) {
   return Response.json(body, {
     status,
@@ -681,6 +701,14 @@ function buildMessageIdentityTool(recordFor, send) {
  */
 export function apply(ctx, rawConfig) {
   const settings = parseConfig(rawConfig);
+  /**
+   * Per-Agent delegation gate: a private identity conversation may spawn
+   * subagents only when the conversation itself recorded that permission. The
+   * restriction lives on the Agent's own scope, so it never touches a group, a
+   * project Session, or another identity.
+   * @type {Map<object, { sync: () => void, dispose: () => void }>}
+   */
+  const delegationGates = new Map();
   const profile = ctx.get('profileContext');
   const dataDir = profile === undefined ? join(dshHome(), 'personal-agent') : join(profile.dir, 'personal-agent');
   const logger = ctx.logger;
@@ -1702,6 +1730,32 @@ export function apply(ctx, rawConfig) {
   ctx.inject(['agents'], (scope) => {
     const installs = new Map();
     /**
+     * Keep one Agent's tool restriction in step with its recorded choice.
+     * @param agent - exact live identity Agent.
+     * @returns the gate.
+     */
+    const gateFor = (agent) => {
+      let restriction = null;
+      const apply = () => {
+        const allowed = readDelegationChoice(agent.session.log);
+        if (allowed) {
+          releaseDisposable(restriction);
+          restriction = null;
+          return;
+        }
+        if (restriction !== null) return;
+        restriction = agent.ctx.inject(['tools'], (toolScope) => toolScope.tools.restrict(delegationDenyFilter()));
+      };
+      apply();
+      return {
+        sync: apply,
+        dispose: () => {
+          releaseDisposable(restriction);
+          restriction = null;
+        },
+      };
+    };
+    /**
      * Attach `/new` to one private identity Agent. Registering beneath the
      * Agent context keeps the command out of project, group, and subagent
      * conversations.
@@ -1732,20 +1786,33 @@ export function apply(ctx, rawConfig) {
         });
       });
       installs.set(agent, fiber);
+      delegationGates.set(agent, gateFor(agent));
     };
     for (const agent of scope.agents.list()) install(agent);
     scope.on('agent/created', ({ agent }) => install(agent));
     scope.on('agent/disposed', ({ agent }) => {
+      delegationGates.get(agent)?.dispose();
+      delegationGates.delete(agent);
       const fiber = installs.get(agent);
       if (fiber === undefined) return;
       installs.delete(agent);
       fiber.dispose().catch((error) => logger?.warn?.(`personal-agent: command cleanup failed: ${messageOf(error)}`));
+    });
+    // Flipping the switch appends one selection event; the gate follows it
+    // immediately, so the next step already sees the new tool set.
+    scope.on('session/event', (session, event) => {
+      if (event?.type !== DELEGATION_EVENT) return;
+      const agent = scope.agents.get(session.id);
+      if (agent === undefined) return;
+      delegationGates.get(agent)?.sync();
     });
     scope.effect(
       () => () => {
         const fibers = [...installs.values()];
         installs.clear();
         for (const fiber of fibers) fiber.dispose().catch(() => undefined);
+        for (const gate of delegationGates.values()) gate.dispose();
+        delegationGates.clear();
       },
       'personal-agent: identity commands',
     );
@@ -2258,6 +2325,53 @@ export function apply(ctx, rawConfig) {
           },
         }),
       'personal-agent: state route',
+    );
+
+    scope.effect(
+      () =>
+        scope.connection.fetch.register({
+          path: DELEGATION_PATH,
+          methods: ['GET', 'POST'],
+          requestBody: 'buffered',
+          fetch: async (request) => {
+            const agents = ctx.get('agents');
+            if (agents === undefined) return failure(503, 'unavailable', 'agents are not available');
+            const agentFor = (sessionId) => (typeof sessionId === 'string' && sessionId !== '' ? agents.get(sessionId) : undefined);
+            if (request.method === 'GET') {
+              const params = new URL(request.url, 'http://localhost').searchParams;
+              const agent = agentFor(params.get('sessionId') ?? '');
+              if (agent === undefined) return failure(404, 'unknown-session', 'no such conversation');
+              return json({ enabled: readDelegationChoice(agent.session.log) });
+            }
+            let body;
+            try {
+              body = await readObjectBody(request);
+            } catch (error) {
+              return failure(400, 'invalid-body', messageOf(error));
+            }
+            const agent = agentFor(body.sessionId);
+            if (agent === undefined) return failure(404, 'unknown-session', 'no such conversation');
+            // Only a private identity chat carries this permission: a group has
+            // its own route to its members, and a child must not widen its own.
+            if (
+              recordForAgent(agent, scope) === undefined ||
+              groupForAgent(agent, scope) !== undefined ||
+              agent.session.origin === 'subagent'
+            ) {
+              return failure(400, 'not-an-identity-chat', 'subagent permission belongs to a private identity conversation');
+            }
+            const enabled = body.enabled === true;
+            agent.session.append(DELEGATION_EVENT, { enabled });
+            try {
+              await ctx.get('sessions')?.flush?.(agent.session);
+            } catch (error) {
+              logger?.warn?.(`personal-agent: could not persist the subagent choice: ${messageOf(error)}`);
+            }
+            delegationGates.get(agent)?.sync();
+            return json({ enabled: readDelegationChoice(agent.session.log) });
+          },
+        }),
+      'personal-agent: delegation route',
     );
 
     scope.effect(

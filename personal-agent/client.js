@@ -72,6 +72,9 @@ window.__ModuleLoader__.load({
      */
     const STALL_AFTER_MS = 120_000;
 
+    /** Per-conversation subagent permission. */
+    const DELEGATION_URL = 'api/personal-agent/delegation';
+
     /** Local visibility preference for the identity chat work details. */
     const THINKING_KEY = 'personal-agent:show-thinking';
     let thinkingVisible = false;
@@ -205,6 +208,7 @@ window.__ModuleLoader__.load({
       'progress.running': 'In progress…',
       'progress.idle': 'No active task',
       'progress.other': '+{count} other sessions',
+      'delegation.label': 'Allow subagents',
       'progress.tool': 'Using {tool}',
       'progress.stalled': 'No result after 2 minutes — it may be stuck',
       'progress.stalledTool': 'No result after 2 minutes — stuck on {tool}',
@@ -353,6 +357,7 @@ window.__ModuleLoader__.load({
       'progress.running': '进行中…',
       'progress.idle': '暂无进行中的任务',
       'progress.other': '另外 {count} 个会话',
+      'delegation.label': '允许开子代理',
       'progress.tool': '正在使用 {tool}',
       'progress.stalled': '两分钟没有结果了，可能卡住了',
       'progress.stalledTool': '两分钟没有结果了 —— 停在 {tool}',
@@ -585,6 +590,14 @@ window.__ModuleLoader__.load({
 .pagent-working-bubble{box-sizing:border-box;display:flex;flex-direction:column;gap:3px;align-self:flex-start;max-width:100%;padding:9px 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.6}
 .pagent-working-text{display:inline-flex;align-items:center;gap:1px}
 .pagent-working-dots::after{content:'…';animation:pagent-working-dots 1.2s steps(3,end) infinite}
+.pagent-delegation-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:34px;padding:0 8px;border-radius:var(--dsw-radius-md,8px);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px}
+.pagent-delegation-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagent-delegation-switch{position:relative;flex:none;width:32px;height:18px;padding:0;border:0;border-radius:9px;background:var(--dsw-alias-fill-quaternary,rgba(127,127,127,.35));cursor:pointer;transition:background .15s ease}
+.pagent-delegation-switch[data-on="true"]{background:var(--dsw-alias-brand-primary,#1d4ed8)}
+.pagent-delegation-switch:disabled{opacity:.6;cursor:default}
+.pagent-delegation-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#1d4ed8);outline-offset:2px}
+.pagent-delegation-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s ease}
+.pagent-delegation-switch[data-on="true"] .pagent-delegation-knob{transform:translateX(14px)}
 .pagent-working-stalled{color:var(--dsw-alias-label-warning,var(--dsw-alias-label-secondary));font-weight:500}
 .pagent-working-task{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.5;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
@@ -3732,6 +3745,79 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
     }
 
     /**
+     * Per-conversation subagent permission. The user decides, for this one
+     * conversation, whether the identity may spawn child agents; every other
+     * conversation keeps its own choice.
+     * @param props - slot props.
+     */
+    function DelegationToggle(props) {
+      const tr = translatorOf(props);
+      const sessionId = typeof props.sessionId === 'string' ? props.sessionId : '';
+      const [enabled, setEnabled] = React.useState(null);
+      const [busy, setBusy] = React.useState(false);
+      React.useEffect(() => {
+        if (sessionId === '') {
+          setEnabled(null);
+          return undefined;
+        }
+        let cancelled = false;
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        fetch(`${DELEGATION_URL}?sessionId=${encodeURIComponent(sessionId)}`, {
+          credentials: 'same-origin',
+          ...(controller === null ? {} : { signal: controller.signal }),
+        })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((data) => {
+            if (!cancelled) setEnabled(data !== null && data.enabled === true);
+          })
+          .catch(() => {
+            if (!cancelled) setEnabled(null);
+          });
+        return () => {
+          cancelled = true;
+          if (controller !== null) controller.abort();
+        };
+      }, [sessionId]);
+      if (enabled === null) return null;
+      const toggle = () => {
+        if (busy) return;
+        setBusy(true);
+        const next = !enabled;
+        fetch(DELEGATION_URL, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId, enabled: next }),
+        })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((data) => {
+            if (data !== null) setEnabled(data.enabled === true);
+          })
+          .catch(() => undefined)
+          .finally(() => setBusy(false));
+      };
+      return h(
+        'div',
+        { className: 'pagent-delegation-row' },
+        h('span', { className: 'pagent-delegation-label' }, tr('delegation.label')),
+        h(
+          'button',
+          {
+            type: 'button',
+            role: 'switch',
+            'aria-checked': enabled ? 'true' : 'false',
+            'aria-label': tr('delegation.label'),
+            className: 'pagent-delegation-switch',
+            'data-on': enabled ? 'true' : 'false',
+            disabled: busy,
+            onClick: toggle,
+          },
+          h('span', { className: 'pagent-delegation-knob', 'aria-hidden': true }),
+        ),
+      );
+    }
+
+    /**
      * Working bubble above the composer for the focused identity. It shows the
      * avatar, a playful status line, and the active todo while any of the
      * identity's Sessions runs, and reports the current Session so the
@@ -4442,6 +4528,21 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
               inject: (sessionId) => ({ sessionId }),
             },
             (props) => h(PersonalProgress, { ...props, ctx }),
+          ),
+        );
+
+        // Subagent permission lives in the model menu, beside the shipped
+        // teamwork switch: it is a decision about this conversation.
+        ctx.slots.inject('conversation.input.model.options', () =>
+          ctx.slots.register(
+            {
+              name: 'conversation.input.model.options',
+              id: 'personal-agent-delegation',
+              order: 60,
+              locale: NS,
+              inject: (sessionId) => ({ sessionId }),
+            },
+            (props) => h(DelegationToggle, { ...props, ctx }),
           ),
         );
 

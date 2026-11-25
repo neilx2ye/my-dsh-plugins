@@ -371,23 +371,28 @@ uses the same rule: the session title and preset controls are hidden, and the
 identity's avatar/name or the group name is shown instead. Project heroes and
 headers are unchanged.
 
-### No subagents and no direct messages
+### Subagents are a per-conversation decision
 
-A private identity conversation runs alone. It cannot spawn a child agent: the
-`personal` preset ships without the delegation tools (`subagent`,
-`subagent_fork`, `subagent_control`, `workflow`), and the bundle does not
-register `message_identity`.
+A private identity conversation starts **without** the delegation tools
+(`subagent`, `subagent_fork`, `subagent_control`, `workflow`). The switch in the
+model and reasoning menu — `允许开子代理` — turns them on for that conversation
+only.
 
-What that used to cost is why it is gone. Reaching another identity meant
-starting a one-shot child in that identity's home and waiting for it inside the
-same turn. A child that stalled left the caller sitting on a silent tool call
-with no deadline and no way to stop it — indistinguishable from a frozen
-assistant. Since 0.6.7 the wait is not offered at all.
+The choice is recorded as one Session event (`personal-agent/delegation`) and the
+Host applies it with `tools.restrict({ deny })` on that Agent's own scope, so it
+follows the conversation across restarts, never leaks to another identity or a
+group, and takes effect on the next step. Other conversations are untouched: the
+default stays off.
 
-Group chats are unchanged: the group host still reaches members through
-`ask_identity`, the bundle's own route, which does not depend on the
-model-facing delegation tools. Earlier `dms/` transcripts stay on disk but
-nothing writes to them any more.
+Why it is off by default: reaching another identity used to mean starting a
+one-shot child and waiting for it inside the same turn, and a child that stalled
+left the caller on a silent tool call with no deadline — indistinguishable from a
+frozen assistant. Now the user grants the capability when a task needs it.
+
+Direct messages are gone entirely: `message_identity` is not registered, and a
+private chat carries no peer roster. Group chats keep `ask_identity` and behave
+exactly as before. Earlier `dms/` transcripts stay on disk but nothing writes to
+them any more.
 
 ### Unread badges
 

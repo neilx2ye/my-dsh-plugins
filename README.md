@@ -13,7 +13,7 @@ DeepSeek Harness (DSH) plugin bundles, released from this one repository.
 | `mcp-settings/` | `@local/mcp-settings` | 0.1.1 | Manage MCP servers from DSH Web |
 | `user-switcher/` | `@local/user-switcher` | 0.2.2 | Linux: choose the account every Bash command runs as (`setpriv`), and open each account its own DSH instance with its own home |
 | `web-push-notify/` | `@local/web-push-notify` | 1.3.0 | Web Push task-completion notifications (Push API + Service Worker); notifies even while the page is in view, entry under **More** |
-| `personal-agent/` | `@local/personal-agent` | 0.6.7 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, selected multi-agent group chats, and `/new` for a clean start that archives the identity's earlier conversations only after the new one is open; the `personal` preset is reserved for identity chats, runs no delegation tools, and registers no `message_identity` — a private chat cannot spawn a subagent or message another identity, while group chats keep `ask_identity`; a turn still running after two quiet minutes names the tool it is on |
+| `personal-agent/` | `@local/personal-agent` | 0.6.8 | Additive personal identities: an identity module above the untouched project sidebar, per-identity memory and home, create/edit/remove, selected multi-agent group chats, and `/new` for a clean start that archives the identity's earlier conversations only after the new one is open; the `personal` preset is reserved for identity chats; subagents are a per-conversation switch in the model menu (off by default), `message_identity` is not registered, and group chats keep `ask_identity`; a turn still running after two quiet minutes names the tool it is on |
 | `system-usage/` | `@local/system-usage` | 1.1.0 | CPU, memory, and root-disk meter across the sidebar foot, with a hover readout and a click-to-refresh sample |
 | `workspace-upload/` | `@local/workspace-upload` | 0.3.0 | Upload files or whole folders into any workspace subfolder from the Files page, with live progress, replace/cancel prompts on name conflicts, and name-safe publishing |
 | `workspace-download/` | `@local/workspace-download` | 0.2.0 | Download a previewed file, any folder as ZIP (with an optional .git), or the whole workspace from the Files side panel, streamed by the Host |
@@ -41,7 +41,7 @@ https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-git-explorer-0
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-mcp-settings-0.1.1.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-user-switcher-0.2.2.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-web-push-notify-1.3.0.tgz
-https://github.com/<owner>/<repo>/releases/download/v0.25.0/local-personal-agent-0.6.7.tgz
+https://github.com/<owner>/<repo>/releases/download/v0.26.0/local-personal-agent-0.6.8.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-system-usage-1.1.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-upload-0.3.0.tgz
 https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-download-0.2.0.tgz
@@ -65,7 +65,7 @@ dsh plugin --profile web add \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-mcp-settings-0.1.1.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-user-switcher-0.2.2.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-web-push-notify-1.3.0.tgz \
-  https://github.com/<owner>/<repo>/releases/download/v0.25.0/local-personal-agent-0.6.7.tgz \
+  https://github.com/<owner>/<repo>/releases/download/v0.26.0/local-personal-agent-0.6.8.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-system-usage-1.1.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-upload-0.3.0.tgz \
   https://github.com/<owner>/<repo>/releases/download/v0.23.0/local-workspace-download-0.2.0.tgz \
@@ -114,7 +114,7 @@ bundle that differs from its directory here; `--apply` copies the package files 
   personal profile, see its README for moving session/workspace storage into the
   profile so the identities do not inherit the device's history; for an existing
   profile, the project UI remains the shipped one.
-- **No subagents in a private chat**: since 0.6.7 a single identity conversation cannot spawn a child agent. The `personal` preset ships without the delegation tools, and `message_identity` is no longer registered, so one identity cannot wait on another inside its own turn — the exact shape that used to freeze a conversation silently. Group chats are unchanged and still reach members through `ask_identity`; earlier `dms/` transcripts stay on disk. The builder, the sender, and their tests remain, so direct messages are one registration away if they come back.
+- **Subagents are per conversation**: since 0.6.8 a private identity chat starts without the delegation tools and gains them only when the user flips `允许开子代理` in the model menu. The choice is one Session event, applied with `tools.restrict({ deny })` on that Agent's scope — it survives restarts, never leaks to another identity or a group, and the default stays off. `message_identity` is not registered, so one identity cannot wait on another inside its own turn; group chats keep `ask_identity` and behave as before.
 - **`/new` handoff**: since 0.6.2 `/new` in an identity chat creates the blank Session first and archives the identity's earlier conversations only after the browser has the new one open. A switch that never opens leaves the old history intact, and `/new` is not registered in project, group, or subagent conversations.
 - **A stuck turn says what it is on**: since 0.6.7 the working bubble stays quiet for an ordinary wait and adds one flat line after two minutes without finishing — `两分钟没有结果了 —— 停在 bash` — naming the tool the turn is stuck on. No live timer and no click-through; the line belongs to the bubble and leaves with the turn.
 - **Bubble width on a phone**: the identity chat caps a bubble at 60% of the column, which left a 185px ribbon on a 412px phone column. Since 0.6.5 the cap is `min(100%, max(60%, 480px))` (user bubbles: `min(88%, max(60%, 440px))`), so a narrow column uses its full width while a wide one keeps the 60% layout.
