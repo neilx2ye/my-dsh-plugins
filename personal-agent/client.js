@@ -622,7 +622,7 @@ window.__ModuleLoader__.load({
 .pagent-delegation-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Track and thumb match the shipped switch exactly: 36x20 pill, 2px inset,
    16px thumb, so this row sits beside the teamwork row without a visual seam. */
-.pagent-delegation-switch{position:relative;flex:none;box-sizing:border-box;width:36px;height:20px;padding:2px;border:0;border-radius:999px;background:rgba(255,255,255,.16);cursor:pointer;transition:all .12s ease}
+.pagent-delegation-switch{position:relative;flex:none;box-sizing:border-box;width:36px;height:20px;padding:2px;border:0;border-radius:999px;clip-path:inset(0 round 999px);background:rgba(255,255,255,.16);cursor:pointer;transition:all .12s ease}
 .pagent-delegation-switch[data-on="true"]{background:rgb(249,250,251)}
 .pagent-delegation-switch:disabled{opacity:.6;cursor:default}
 .pagent-delegation-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#1d4ed8);outline-offset:2px}
